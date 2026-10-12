@@ -3,10 +3,6 @@ name: Recovery Build (SM-T583 Legacy)
 'on':
   workflow_dispatch:
     inputs:
-      IMG_URL:
-        description: 'IMG_URL (optional). Empty = use recovery.img committed in repo root. Google Drive links supported.'
-        required: false
-        default: ''
       MANIFEST_URL:
         description: 'MANIFEST_URL (SSH also supported, ex: git@github.com:xxxxx)'
         required: true
@@ -43,7 +39,6 @@ jobs:
       - name: Display Run Parameters
         run: |
           echo "::group::User Environment Variables"
-          echo "Image URL: ${{ github.event.inputs.IMG_URL }}"
           echo "Manifest URL: ${{ github.event.inputs.MANIFEST_URL }}"
           echo "Manifest Branch: ${{ github.event.inputs.MANIFEST_BRANCH }}"
           echo "Build Target: ${{ github.event.inputs.BUILD_TARGET }}.img"
@@ -71,7 +66,7 @@ jobs:
             squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static \
             libstdc++-10-dev python3 python3-pip cpio wget curl file unzip
           python3 -m pip install --upgrade pip
-          python3 -m pip install twrpdtgen gdown
+          python3 -m pip install twrpdtgen
 
       - name: Install OpenJDK
         uses: actions/setup-java@v4
@@ -118,33 +113,46 @@ jobs:
 
       - name: Get recovery image
         working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-        env:
-          IMG_URL: ${{ github.event.inputs.IMG_URL }}
         run: |
           set -e
 
-          if [ -n "$IMG_URL" ]; then
-            echo "Downloading recovery image from input URL"
-            case "$IMG_URL" in
-              *docs.google.com*|*drive.google.com*)
-                python3 -m gdown --fuzzy "$IMG_URL" -O recovery.img
-                ;;
-              *)
-                wget -O recovery.img "$IMG_URL"
-                ;;
-            esac
-          else
-            echo "Using recovery.img committed in repository root"
-            cp "${GITHUB_WORKSPACE}/recovery.img" recovery.img
+          echo "Searching local repository for recovery image"
+          echo "GITHUB_WORKSPACE=${GITHUB_WORKSPACE}"
+          ls -lah "${GITHUB_WORKSPACE}" || true
+
+          SOURCE_IMG=""
+          for candidate in \
+            "${GITHUB_WORKSPACE}/recovery.img" \
+            "${GITHUB_WORKSPACE}/Recovery.img" \
+            "${GITHUB_WORKSPACE}/recovery/recovery.img" \
+            "${GITHUB_WORKSPACE}/out/recovery.img"
+          do
+            if [ -f "$candidate" ]; then
+              SOURCE_IMG="$candidate"
+              break
+            fi
+          done
+
+          if [ -z "$SOURCE_IMG" ]; then
+            SOURCE_IMG="$(find "${GITHUB_WORKSPACE}" -maxdepth 3 -type f $ -iname 'recovery.img' -o -iname '*.img' $ | head -n 1 || true)"
           fi
+
+          if [ -z "$SOURCE_IMG" ]; then
+            echo "::error::No local recovery image found in repository."
+            echo "::error::Commit recovery.img to repository root."
+            find "${GITHUB_WORKSPACE}" -maxdepth 3 -type f | head -n 200 || true
+            exit 1
+          fi
+
+          echo "Using local image: $SOURCE_IMG"
+          cp "$SOURCE_IMG" recovery.img
 
           ls -lh recovery.img
           file recovery.img
 
           magic="$(head -c 8 recovery.img || true)"
           if [ "$magic" != "ANDROID!" ] && [ "$magic" != "VNDRBOOT" ]; then
-            echo "::error::Downloaded file is not a valid Android boot/recovery image."
-            echo "::error::If you used Google Drive and it still failed, commit recovery.img to repo root and leave IMG_URL empty."
+            echo "::error::Selected file is not a valid Android boot/recovery image."
             head -c 300 recovery.img || true
             exit 1
           fi
