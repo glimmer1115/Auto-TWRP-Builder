@@ -78,7 +78,7 @@ jobs:
           echo "workspace-folder=$(pwd)" >> $GITHUB_OUTPUT
           git config --global user.name "azwhikaru"
           git config --global user.email "azwhikaru+37921907@github.com"
-          repo init --depth=1 -u ${{ github.event.inputs.MANIFEST_URL }} -b ${{ github.event.inputs.MANIFEST_BRANCH }}
+          repo init --depth=1 -u ${{ github.event.inputs.MANIFEST_URL }} -b${{ github.event.inputs.MANIFEST_BRANCH }}
 
       - name: Check Build Tree
         uses: haya14busa/action-cond@v1
@@ -118,90 +118,4 @@ jobs:
         working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
       - name: Generate Device Tree
-        id: gdt
-        run: |
-          python3 ${GITHUB_WORKSPACE}/scripts/build.py -i recovery.img -o device
-        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-
-      - name: Normalize Device Tree
-        id: normalize
-        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-        run: |
-          set -e
-          OLD_TREE="${{ steps.gdt.outputs.DEVICE_PATH }}"
-          NEW_TREE="device/samsung/gtaxlwifi"
-          echo "Old tree path: $OLD_TREE"
-          if [ "$OLD_TREE" != "$NEW_TREE" ]; then
-            mkdir -p device/samsung
-            rm -rf "$NEW_TREE"
-            if [ -d "$OLD_TREE" ]; then
-              mv "$OLD_TREE" "$NEW_TREE"
-            else
-              echo "::error::Generated device tree path not found!"
-              exit 1
-            fi
-          fi
-          OLD_CODENAME=$(basename "$OLD_TREE")
-          
-          # 메이크파일 명칭 정리 (omni_gtaxlwifi.mk로 강제 통일)
-          cd "$NEW_TREE"
-          for f in *.mk; do
-            if [[ "$f" == omni_*.mk ]] || [[ "$f" == twrp_*.mk ]]; then
-              mv "$f" "omni_gtaxlwifi.mk"
-              break
-            fi
-          done
-          cd - > /dev/null
-
-          grep -RIl "$OLD_CODENAME" "$NEW_TREE" | xargs -r sed -i "s/${OLD_CODENAME}/gtaxlwifi/g"
-          
-          # Android.bp 구문 오류 방지를 위해 파일 제거
-          if [ -f "$NEW_TREE/Android.bp" ]; then
-            rm -f "$NEW_TREE/Android.bp"
-          fi
-
-          echo "makefile_name=omni_gtaxlwifi" >> $GITHUB_OUTPUT
-
-      - name: Sync Device Dependencies
-        run: |
-          bash ${GITHUB_WORKSPACE}/scripts/convert.sh device/samsung/gtaxlwifi/${{ steps.buildtree.outputs.value }}.dependencies
-          repo sync -j4
-        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-        continue-on-error: true
-
-      - name: Set Swap Space
-        uses: pierotofy/set-swap-space@master
-        with:
-          swap-size-gb: 12
-
-      - name: Switch to Python2
-        run: |
-          sudo apt -y install python2
-          sudo ln -sf /usr/bin/python2 /usr/bin/python
-          python --version
-
-      - name: Building recovery
-        run: |
-          source build/envsetup.sh
-          export ALLOW_MISSING_DEPENDENCIES=true
-          export LC_ALL=C
-          lunch ${{ steps.normalize.outputs.makefile_name }}-eng
-          make clean
-          make ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc --all)
-        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-
-      - name: Upload to Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: | 
-            workspace/out/target/product/gtaxlwifi/${{ github.event.inputs.BUILD_TARGET }}.img
-            workspace/out/target/product/gtaxlwifi/*.zip
-            workspace/out/target/product/gtaxlwifi/*vendor*.img
-          name: gtaxlwifi-${{ github.run_id }}
-          tag_name: ${{ github.run_id }}
-          body: |
-            Manifest: ${{ github.event.inputs.MANIFEST_BRANCH }}
-            Device: gtaxlwifi
-            Target: ${{ github.event.inputs.BUILD_TARGET }}.img
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        id:
