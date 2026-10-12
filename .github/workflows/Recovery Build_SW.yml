@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       IMG_URL:
-        description: 'IMG_ URL (direct link to raw recovery.img, e.g. GitHub raw URL)'
-        required: true
-        default: 'https://github.com/KoCleo/Auto-Twrp-Builder/raw/master/recovery.img'
+        description: 'IMG_URL (optional). Leave EMPTY to use recovery.img committed in the repo root'
+        required: false
+        default: ''
       MANIFEST_URL:
         description: 'MANIFEST_URL (if want to use SSH keys, use git@github.com:XXXXX)'
         required: true
@@ -23,7 +23,7 @@ on:
 jobs:
   build:
     if: github.event.repository.owner.id == github.event.sender.id
-    # FIX: ubuntu-20.04 runner image was retired (Apr 2025)
+    # ubuntu-20.04 runner image was retired (Apr 2025)
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -31,18 +31,17 @@ jobs:
     - name: Display Run Parameters
       run: |
         echo "::group::User Environment Variables"
+        echo "Image URL: ${{ github.event.inputs.IMG_URL }}"
         echo "Manifest URL: ${{ github.event.inputs.MANIFEST_URL }}"
         echo "Manifest Branch: ${{ github.event.inputs.MANIFEST_BRANCH }}"
         echo "Build Target: ${{ github.event.inputs.BUILD_TARGET }}.img"
         echo "::endgroup::"
 
-    # You might want to Checkout your repo first, but not mandatory
     - name: Check Out
       uses: actions/checkout@v4
-    # Cleanup The Actions Workspace Using Custom Composite Run Actions
+
     - name: Cleanup
       uses: rokibhasansagar/slimhub_actions@main
-      # That's it! Now use your normal steps
 
     - name: Prepare the environment
       run: |
@@ -51,6 +50,7 @@ jobs:
         sudo apt -y install gperf gcc-multilib gcc-10-multilib g++-multilib g++-10-multilib libc6-dev lib32ncurses5-dev x11proto-core-dev libx11-dev tree lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc bc ccache lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libwxgtk3.0-gtk3-dev libxml2 lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev libncurses5 python3
         sudo apt -y install python3 python3-pip cpio wget file
         pip3 install twrpdtgen
+
     - name: Install OpenJDK
       uses: actions/setup-java@v4
       with:
@@ -89,23 +89,28 @@ jobs:
         if_true: twrp
         if_false: omni
 
-
     - name: Repo Sync
       run: |
         repo sync -j$(nproc --all) --force-sync
       working-directory: workspace
 
-    # FIX: URL is quoted (a bare '&' would background the command) and the
-    # download is saved under a fixed name so build.py always finds it.
-    - name: Download recovery image
+    # Uses IMG_URL if given, otherwise recovery.img from the repo root.
+    # Fails early if the result is not an Android boot image.
+    - name: Get recovery image
       env:
         IMG_URL: ${{ github.event.inputs.IMG_URL }}
       run: |
-        wget -O recovery.img "$IMG_URL"
+        if [ -n "$IMG_URL" ]; then
+          echo "Downloading $IMG_URL"
+          wget -O recovery.img "$IMG_URL"
+        else
+          echo "Using recovery.img from repository root"
+          cp "${GITHUB_WORKSPACE}/recovery.img" recovery.img
+        fi
         ls -l recovery.img
         file recovery.img
         if [ "$(head -c 8 recovery.img)" != "ANDROID!" ]; then
-          echo "::error::Downloaded file is not an Android boot image (got HTML or wrong file?)"
+          echo "::error::recovery.img is not an Android boot image (HTML page or wrong file?)"
           head -c 300 recovery.img
           exit 1
         fi
@@ -129,18 +134,18 @@ jobs:
       with:
         swap-size-gb: 12
 
-    # FIX: on Ubuntu 22.04 there is no "python" package; install python2 and link it
+    # Ubuntu 22.04 has no "python" package; AOSP 8.1 needs python2
     - name: Switch to Python2
       run: |
         sudo apt -y install python2
         sudo ln -sf /usr/bin/python2 /usr/bin/python
         python --version
-      continue-on-error: true
 
     - name: Building recovery
       run: |
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
+        export LC_ALL=C
         lunch ${{ steps.gdt.outputs.MAKEFILE_NAME }}-eng
         make clean
         make ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc --all)
