@@ -141,14 +141,18 @@ jobs:
             exit 1
           fi
         fi
-        # 내부 makefile 이름 및 기기명 정리
         OLD_CODENAME=$(basename "$OLD_TREE")
         if [ -f "$NEW_TREE/omni_${OLD_CODENAME}.mk" ]; then
           mv "$NEW_TREE/omni_${OLD_CODENAME}.mk" "$NEW_TREE/omni_gtaxlwifi.mk"
         fi
         grep -RIl "$OLD_CODENAME" "$NEW_TREE" | xargs -r sed -i "s/${OLD_CODENAME}/gtaxlwifi/g"
+        
+        if [ -f "$NEW_TREE/Android.bp" ]; then
+          sed -i '/soong_namespace/d' "$NEW_TREE/Android.bp" || true
+        fi
+
         echo "device_name=gtaxlwifi" >> $GITHUB_OUTPUT
-        echo "makefile_name=omni_gtaxlwifi" >> $GITHUB_OUTPUT
+        echo "makefile_name=gtaxlwifi" >> $GITHUB_OUTPUT
 
     - name: Sync Device Dependencies
       run: |
