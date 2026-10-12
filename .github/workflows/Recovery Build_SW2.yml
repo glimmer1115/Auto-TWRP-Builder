@@ -1,133 +1,287 @@
 name: Recovery Build (SM-T583 Legacy)
- 
-on:
-19 lines hidden
-description: 'Friendly release label'
-required: true
-default: 'SM-T583'
-FORCE_MANUFACTURER:
-description: 'Force manufacturer for device tree normalization'
-required: true
-default: 'samsung'
-FORCE_CODENAME:
-description: 'Force codename for device tree normalization'
-required: true
-default: 'gtaxlwifi'
- 
+
+'on':
+  workflow_dispatch:
+    inputs:
+      IMG_URL:
+        description: 'IMG_URL (optional). Empty = use recovery.img committed in repo root. Google Drive links supported.'
+        required: false
+        default: ''
+      MANIFEST_URL:
+        description: 'MANIFEST_URL (SSH also supported, ex: git@github.com:xxxxx)'
+        required: true
+        default: 'https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni'
+      MANIFEST_BRANCH:
+        description: 'MANIFEST_BRANCH'
+        required: true
+        default: 'twrp-8.1'
+      BUILD_TARGET:
+        description: 'BUILD_TARGET'
+        required: true
+        default: 'recovery'
+      DEVICE_LABEL:
+        description: 'Friendly release label'
+        required: true
+        default: 'SM-T583'
+      FORCE_MANUFACTURER:
+        description: 'Force manufacturer for device tree normalization'
+        required: true
+        default: 'samsung'
+      FORCE_CODENAME:
+        description: 'Force codename for device tree normalization'
+        required: true
+        default: 'gtaxlwifi'
+
 jobs:
-build:
-11 lines hidden
-echo "Manifest Branch: ${{ github.event.inputs.MANIFEST_BRANCH }}"
-echo "Build Target: ${{ github.event.inputs.BUILD_TARGET }}.img"
-echo "Device Label: ${{ github.event.inputs.DEVICE_LABEL }}"
-echo "Force Manufacturer: ${{ github.event.inputs.FORCE_MANUFACTURER }}"
-echo "Force Codename: ${{ github.event.inputs.FORCE_CODENAME }}"
-echo "::endgroup::"
- 
-- name: Check Out
-99 lines hidden
-run: |
-python3 "${GITHUB_WORKSPACE}/scripts/build.py" -i recovery.img -o device
- 
-- name: Normalize Device Tree
-id: normalize
-working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-env:
-DETECTED_TREE: ${{ steps.gdt.outputs.DEVICE_PATH }}
-DETECTED_MAKEFILE: ${{ steps.gdt.outputs.MAKEFILE_NAME }}
-FORCE_MANUFACTURER: ${{ github.event.inputs.FORCE_MANUFACTURER }}
-FORCE_CODENAME: ${{ github.event.inputs.FORCE_CODENAME }}
-run: |
-set -e
- 
-OLD_TREE="$DETECTED_TREE"
-OLD_MANUFACTURER="$(basename "$(dirname "$OLD_TREE")")"
-OLD_CODENAME="$(basename "$OLD_TREE")"
-TARGET_MANUFACTURER="${FORCE_MANUFACTURER:-$OLD_MANUFACTURER}"
-TARGET_CODENAME="${FORCE_CODENAME:-$OLD_CODENAME}"
-NEW_TREE="device/${TARGET_MANUFACTURER}/${TARGET_CODENAME}"
-TARGET_MAKEFILE="omni_${TARGET_CODENAME}"
- 
-echo "Detected tree: $OLD_TREE"
-echo "Detected codename: $OLD_CODENAME"
-echo "Target tree: $NEW_TREE"
-echo "Target makefile: $TARGET_MAKEFILE"
- 
-if [ "$OLD_TREE" != "$NEW_TREE" ]; then
-mkdir -p "device/${TARGET_MANUFACTURER}"
-rm -rf "$NEW_TREE"
-mv "$OLD_TREE" "$NEW_TREE"
-fi
- 
-if [ -f "$NEW_TREE/omni_${OLD_CODENAME}.mk" ] && [ "$OLD_CODENAME" != "$TARGET_CODENAME" ]; then
-mv "$NEW_TREE/omni_${OLD_CODENAME}.mk" "$NEW_TREE/omni_${TARGET_CODENAME}.mk"
-fi
- 
-if [ -f "$NEW_TREE/twrp_${OLD_CODENAME}.mk" ] && [ "$OLD_CODENAME" != "$TARGET_CODENAME" ]; then
-mv "$NEW_TREE/twrp_${OLD_CODENAME}.mk" "$NEW_TREE/twrp_${TARGET_CODENAME}.mk"
-fi
- 
-grep -RIl "$OLD_CODENAME" "$NEW_TREE" | xargs -r sed -i "s/${OLD_CODENAME}/${TARGET_CODENAME}/g"
- 
-if [ "$OLD_MANUFACTURER" != "$TARGET_MANUFACTURER" ]; then
-grep -RIl "$OLD_MANUFACTURER" "$NEW_TREE" | xargs -r sed -i "s/${OLD_MANUFACTURER}/${TARGET_MANUFACTURER}/g"
-fi
- 
-echo "effective_device_tree_path=$NEW_TREE" >> "$GITHUB_OUTPUT"
-echo "effective_manufacturer=$TARGET_MANUFACTURER" >> "$GITHUB_OUTPUT"
-echo "effective_codename=$TARGET_CODENAME" >> "$GITHUB_OUTPUT"
-echo "effective_makefile_name=$TARGET_MAKEFILE" >> "$GITHUB_OUTPUT"
- 
-- name: Resolve Product Info
-id: product
-run: |
-PRODUCT_NAME="${{ steps.gdt.outputs.MAKEFILE_NAME }}"
-PRODUCT_NAME="${PRODUCT_NAME#omni_}"
-PRODUCT_NAME="${PRODUCT_NAME#twrp_}"
-PRODUCT_NAME="${{ steps.normalize.outputs.effective_codename }}"
-echo "product_name=$PRODUCT_NAME" >> "$GITHUB_OUTPUT"
-echo "device_tree_path=${{ steps.gdt.outputs.DEVICE_PATH }}" >> "$GITHUB_OUTPUT"
-echo "Detected device tree: ${{ steps.gdt.outputs.DEVICE_PATH }}"
-echo "Detected lunch target: ${{ steps.gdt.outputs.MAKEFILE_NAME }}-eng"
-echo "Detected product output: $PRODUCT_NAME"
-echo "device_tree_path=${{ steps.normalize.outputs.effective_device_tree_path }}" >> "$GITHUB_OUTPUT"
-echo "Effective device tree: ${{ steps.normalize.outputs.effective_device_tree_path }}"
-echo "Effective lunch target: ${{ steps.normalize.outputs.effective_makefile_name }}-eng"
-echo "Effective product output: $PRODUCT_NAME"
- 
-- name: Apply Samsung safe defaults
-working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-run: |
-TREE="${{ steps.gdt.outputs.DEVICE_PATH }}"
-TREE="${{ steps.normalize.outputs.effective_device_tree_path }}"
-BOARD="$TREE/BoardConfig.mk"
- 
-if echo "$TREE" | grep -qi '/samsung/'; then
-17 lines hidden
-working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-continue-on-error: true
-run: |
-bash "${GITHUB_WORKSPACE}/scripts/convert.sh" "${{ steps.gdt.outputs.DEVICE_PATH }}/${{ steps.buildtree.outputs.value }}.dependencies"
-bash "${GITHUB_WORKSPACE}/scripts/convert.sh" "${{ steps.normalize.outputs.effective_device_tree_path }}/${{ steps.buildtree.outputs.value }}.dependencies"
-repo sync -j"$(nproc --all)"
- 
-- name: Set Swap Space
-15 lines hidden
-source build/envsetup.sh
-export ALLOW_MISSING_DEPENDENCIES=true
-export LC_ALL=C
-lunch "${{ steps.gdt.outputs.MAKEFILE_NAME }}-eng"
-lunch "${{ steps.normalize.outputs.effective_makefile_name }}-eng"
-make clean
-make "${{ github.event.inputs.BUILD_TARGET }}image" -j"$(nproc --all)"
- 
-17 lines hidden
-Label: ${{ github.event.inputs.DEVICE_LABEL }}
-Manifest: ${{ github.event.inputs.MANIFEST_BRANCH }}
-Tree: ${{ steps.product.outputs.device_tree_path }}
-Lunch: ${{ steps.gdt.outputs.MAKEFILE_NAME }}-eng
-Lunch: ${{ steps.normalize.outputs.effective_makefile_name }}-eng
-Product: ${{ steps.product.outputs.product_name }}
-Target: ${{ github.event.inputs.BUILD_TARGET }}.img
-env:
-GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  build:
+    if: github.event.repository.owner.id == github.event.sender.id
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Display Run Parameters
+        run: |
+          echo "::group::User Environment Variables"
+          echo "Image URL: ${{ github.event.inputs.IMG_URL }}"
+          echo "Manifest URL: ${{ github.event.inputs.MANIFEST_URL }}"
+          echo "Manifest Branch: ${{ github.event.inputs.MANIFEST_BRANCH }}"
+          echo "Build Target: ${{ github.event.inputs.BUILD_TARGET }}.img"
+          echo "Device Label: ${{ github.event.inputs.DEVICE_LABEL }}"
+          echo "Force Manufacturer: ${{ github.event.inputs.FORCE_MANUFACTURER }}"
+          echo "Force Codename: ${{ github.event.inputs.FORCE_CODENAME }}"
+          echo "::endgroup::"
+
+      - name: Check Out
+        uses: actions/checkout@v4
+
+      - name: Cleanup
+        uses: rokibhasansagar/slimhub_actions@main
+
+      - name: Prepare the environment
+        run: |
+          sudo apt update
+          sudo DEBIAN_FRONTEND=noninteractive apt -y upgrade
+          sudo DEBIAN_FRONTEND=noninteractive apt -y install \
+            gperf gcc-multilib gcc-10-multilib g++-multilib g++-10-multilib \
+            libc6-dev lib32ncurses5-dev x11proto-core-dev libx11-dev tree \
+            lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc bc ccache \
+            lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev \
+            libsdl1.2-dev libwxgtk3.0-gtk3-dev libxml2 lzop pngcrush schedtool \
+            squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static \
+            libstdc++-10-dev python3 python3-pip cpio wget curl file unzip
+          python3 -m pip install --upgrade pip
+          python3 -m pip install twrpdtgen gdown
+
+      - name: Install OpenJDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '8'
+
+      - name: Setup SSH Keys
+        if: ${{ startsWith(github.event.inputs.MANIFEST_URL, 'git@github.com') }}
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: |
+            ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Install repo
+        run: |
+          mkdir -p ~/bin
+          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+          chmod a+x ~/bin/repo
+          sudo ln -sf ~/bin/repo /usr/bin/repo
+
+      - name: Initialize repo
+        id: pwd
+        run: |
+          mkdir workspace
+          cd workspace
+          echo "workspace-folder=$(pwd)" >> "$GITHUB_OUTPUT"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          repo init --depth=1 -u "${{ github.event.inputs.MANIFEST_URL }}" -b "${{ github.event.inputs.MANIFEST_BRANCH }}"
+
+      - name: Check Build Tree
+        id: buildtree
+        uses: haya14busa/action-cond@v1
+        with:
+          cond: ${{ github.event.inputs.MANIFEST_BRANCH == 'twrp-11' || github.event.inputs.MANIFEST_BRANCH == 'twrp-12.1' }}
+          if_true: twrp
+          if_false: omni
+
+      - name: Repo Sync
+        working-directory: workspace
+        run: |
+          repo sync -j"$(nproc --all)" --force-sync
+
+      - name: Get recovery image
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        env:
+          IMG_URL: ${{ github.event.inputs.IMG_URL }}
+        run: |
+          set -e
+
+          if [ -n "$IMG_URL" ]; then
+            echo "Downloading recovery image from input URL"
+            case "$IMG_URL" in
+              *docs.google.com*|*drive.google.com*)
+                python3 -m gdown --fuzzy "$IMG_URL" -O recovery.img
+                ;;
+              *)
+                wget -O recovery.img "$IMG_URL"
+                ;;
+            esac
+          else
+            echo "Using recovery.img committed in repository root"
+            cp "${GITHUB_WORKSPACE}/recovery.img" recovery.img
+          fi
+
+          ls -lh recovery.img
+          file recovery.img
+
+          magic="$(head -c 8 recovery.img || true)"
+          if [ "$magic" != "ANDROID!" ] && [ "$magic" != "VNDRBOOT" ]; then
+            echo "::error::Downloaded file is not a valid Android boot/recovery image."
+            echo "::error::If you used Google Drive and it still failed, commit recovery.img to repo root and leave IMG_URL empty."
+            head -c 300 recovery.img || true
+            exit 1
+          fi
+
+      - name: Generate Device Tree
+        id: gdt
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        run: |
+          python3 "${GITHUB_WORKSPACE}/scripts/build.py" -i recovery.img -o device
+
+      - name: Normalize Device Tree
+        id: normalize
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        env:
+          DETECTED_TREE: ${{ steps.gdt.outputs.DEVICE_PATH }}
+          FORCE_MANUFACTURER: ${{ github.event.inputs.FORCE_MANUFACTURER }}
+          FORCE_CODENAME: ${{ github.event.inputs.FORCE_CODENAME }}
+        run: |
+          set -e
+
+          OLD_TREE="$DETECTED_TREE"
+          OLD_MANUFACTURER="$(basename "$(dirname "$OLD_TREE")")"
+          OLD_CODENAME="$(basename "$OLD_TREE")"
+          TARGET_MANUFACTURER="${FORCE_MANUFACTURER:-$OLD_MANUFACTURER}"
+          TARGET_CODENAME="${FORCE_CODENAME:-$OLD_CODENAME}"
+          NEW_TREE="device/${TARGET_MANUFACTURER}/${TARGET_CODENAME}"
+          TARGET_MAKEFILE="omni_${TARGET_CODENAME}"
+
+          echo "Detected tree: $OLD_TREE"
+          echo "Detected codename: $OLD_CODENAME"
+          echo "Target tree: $NEW_TREE"
+          echo "Target makefile: $TARGET_MAKEFILE"
+
+          if [ "$OLD_TREE" != "$NEW_TREE" ]; then
+            mkdir -p "device/${TARGET_MANUFACTURER}"
+            rm -rf "$NEW_TREE"
+            mv "$OLD_TREE" "$NEW_TREE"
+          fi
+
+          if [ -f "$NEW_TREE/omni_${OLD_CODENAME}.mk" ] && [ "$OLD_CODENAME" != "$TARGET_CODENAME" ]; then
+            mv "$NEW_TREE/omni_${OLD_CODENAME}.mk" "$NEW_TREE/omni_${TARGET_CODENAME}.mk"
+          fi
+
+          if [ -f "$NEW_TREE/twrp_${OLD_CODENAME}.mk" ] && [ "$OLD_CODENAME" != "$TARGET_CODENAME" ]; then
+            mv "$NEW_TREE/twrp_${OLD_CODENAME}.mk" "$NEW_TREE/twrp_${TARGET_CODENAME}.mk"
+          fi
+
+          grep -RIl "$OLD_CODENAME" "$NEW_TREE" | xargs -r sed -i "s/${OLD_CODENAME}/${TARGET_CODENAME}/g"
+
+          if [ "$OLD_MANUFACTURER" != "$TARGET_MANUFACTURER" ]; then
+            grep -RIl "$OLD_MANUFACTURER" "$NEW_TREE" | xargs -r sed -i "s/${OLD_MANUFACTURER}/${TARGET_MANUFACTURER}/g"
+          fi
+
+          echo "effective_device_tree_path=$NEW_TREE" >> "$GITHUB_OUTPUT"
+          echo "effective_codename=$TARGET_CODENAME" >> "$GITHUB_OUTPUT"
+          echo "effective_makefile_name=$TARGET_MAKEFILE" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve Product Info
+        id: product
+        run: |
+          PRODUCT_NAME="${{ steps.normalize.outputs.effective_codename }}"
+          echo "product_name=$PRODUCT_NAME" >> "$GITHUB_OUTPUT"
+          echo "device_tree_path=${{ steps.normalize.outputs.effective_device_tree_path }}" >> "$GITHUB_OUTPUT"
+
+      - name: Apply Samsung safe defaults
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        run: |
+          TREE="${{ steps.normalize.outputs.effective_device_tree_path }}"
+          BOARD="$TREE/BoardConfig.mk"
+
+          if echo "$TREE" | grep -qi '/samsung/'; then
+            echo "Samsung tree detected: $TREE"
+
+            if [ -f "$BOARD" ]; then
+              grep -q '^TW_INCLUDE_DOWNLOAD_MODE := true$' "$BOARD" || echo 'TW_INCLUDE_DOWNLOAD_MODE := true' >> "$BOARD"
+              grep -q '^TW_NO_REBOOT_BOOTLOADER := true$' "$BOARD" || echo 'TW_NO_REBOOT_BOOTLOADER := true' >> "$BOARD"
+
+              if grep -q '^TARGET_ARCH := arm64$' "$BOARD"; then
+                grep -q '^TW_THEME := ' "$BOARD" || echo 'TW_THEME := portrait_hdpi' >> "$BOARD"
+              else
+                grep -q '^TW_THEME := ' "$BOARD" || echo 'TW_THEME := portrait_mdpi' >> "$BOARD"
+              fi
+            fi
+          fi
+
+      - name: Sync Device Dependencies
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        continue-on-error: true
+        run: |
+          bash "${GITHUB_WORKSPACE}/scripts/convert.sh" "${{ steps.normalize.outputs.effective_device_tree_path }}/${{ steps.buildtree.outputs.value }}.dependencies"
+          repo sync -j"$(nproc --all)"
+
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 12
+
+      - name: Switch to Python2
+        continue-on-error: true
+        run: |
+          sudo DEBIAN_FRONTEND=noninteractive apt -y install python2
+          sudo ln -sf /usr/bin/python2 /usr/bin/python
+          python --version || true
+
+      - name: Build recovery
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        run: |
+          set -e
+          source build/envsetup.sh
+          export ALLOW_MISSING_DEPENDENCIES=true
+          export LC_ALL=C
+          lunch "${{ steps.normalize.outputs.effective_makefile_name }}-eng"
+          make clean
+          make "${{ github.event.inputs.BUILD_TARGET }}image" -j"$(nproc --all)"
+
+      - name: Verify Build Outputs
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        run: |
+          PRODUCT_DIR="out/target/product/${{ steps.product.outputs.product_name }}"
+          echo "Checking product dir: $PRODUCT_DIR"
+          ls -lah "$PRODUCT_DIR" || true
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            workspace/out/target/product/${{ steps.product.outputs.product_name }}/${{ github.event.inputs.BUILD_TARGET }}.img
+            workspace/out/target/product/${{ steps.product.outputs.product_name }}/*.zip
+            workspace/out/target/product/${{ steps.product.outputs.product_name }}/*vendor*.img
+          name: ${{ github.event.inputs.DEVICE_LABEL }}-${{ steps.product.outputs.product_name }}-${{ github.run_id }}
+          tag_name: ${{ github.run_id }}
+          body: |
+            Label: ${{ github.event.inputs.DEVICE_LABEL }}
+            Manifest: ${{ github.event.inputs.MANIFEST_BRANCH }}
+            Tree: ${{ steps.product.outputs.device_tree_path }}
+            Lunch: ${{ steps.normalize.outputs.effective_makefile_name }}-eng
+            Product: ${{ steps.product.outputs.product_name }}
+            Target: ${{ github.event.inputs.BUILD_TARGET }}.img
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
