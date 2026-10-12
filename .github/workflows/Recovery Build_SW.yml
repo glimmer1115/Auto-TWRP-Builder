@@ -6,7 +6,7 @@ on:
       IMG_URL:
         description: 'IMG_URL (optional). Leave EMPTY to use recovery.img committed in the repo root'
         required: false
-        default: ''
+        default: 'https://github.com/glimmer1115/Auto-TWRP-Builder/raw/refs/heads/master/recovery.img'
       MANIFEST_URL:
         description: 'MANIFEST_URL (if want to use SSH keys, use git@github.com:XXXXX)'
         required: true
@@ -23,7 +23,6 @@ on:
 jobs:
   build:
     if: github.event.repository.owner.id == github.event.sender.id
-    # ubuntu-20.04 runner image was retired (Apr 2025)
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -72,6 +71,7 @@ jobs:
         sudo ln -sf ~/bin/repo /usr/bin/repo
 
     - name: Initialize repo
+      id: pwd
       run: |
         mkdir workspace
         cd workspace
@@ -79,7 +79,6 @@ jobs:
         git config --global user.name "azwhikaru"
         git config --global user.email "azwhikaru+37921907@github.com"
         repo init --depth=1 -u ${{ github.event.inputs.MANIFEST_URL }} -b ${{ github.event.inputs.MANIFEST_BRANCH }}
-      id: pwd
 
     - name: Check Build Tree
       uses: haya14busa/action-cond@v1
@@ -94,8 +93,6 @@ jobs:
         repo sync -j$(nproc --all) --force-sync
       working-directory: workspace
 
-    # Uses IMG_URL if given, otherwise recovery.img from the repo root.
-    # Fails early if the result is not an Android boot image.
     - name: Get recovery image
       env:
         IMG_URL: ${{ github.event.inputs.IMG_URL }}
@@ -117,10 +114,10 @@ jobs:
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
     - name: Generate Device Tree
+      id: gdt
       run: |
         python3 ${GITHUB_WORKSPACE}/scripts/build.py -i recovery.img -o device
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-      id: gdt
 
     - name: Sync Device Dependencies
       run: |
@@ -134,7 +131,6 @@ jobs:
       with:
         swap-size-gb: 12
 
-    # Ubuntu 22.04 has no "python" package; AOSP 8.1 needs python2
     - name: Switch to Python2
       run: |
         sudo apt -y install python2
@@ -146,7 +142,7 @@ jobs:
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
         export LC_ALL=C
-        lunch ${{ steps.gdt.outputs.MAKEFILE_NAME }}-eng
+        lunch omni_${{ steps.gdt.outputs.DEVICE_NAME }}-eng
         make clean
         make ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc --all)
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
