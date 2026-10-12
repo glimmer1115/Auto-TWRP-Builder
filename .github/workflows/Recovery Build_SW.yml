@@ -90,7 +90,11 @@ jobs:
 
     - name: Repo Sync
       run: |
-        repo sync -j$(nproc --all) --force-sync
+        for i in {1..3}; do
+          repo sync -j4 --force-sync && break
+          echo "Repo sync failed, retrying..."
+          sleep 5
+        done
       working-directory: workspace
 
     - name: Get recovery image
@@ -119,10 +123,37 @@ jobs:
         python3 ${GITHUB_WORKSPACE}/scripts/build.py -i recovery.img -o device
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
+    - name: Normalize Device Tree
+      id: normalize
+      working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+      run: |
+        set -e
+        OLD_TREE="${{ steps.gdt.outputs.DEVICE_PATH }}"
+        NEW_TREE="device/samsung/gtaxlwifi"
+        echo "Old tree path: $OLD_TREE"
+        if [ "$OLD_TREE" != "$NEW_TREE" ]; then
+          mkdir -p device/samsung
+          rm -rf "$NEW_TREE"
+          if [ -d "$OLD_TREE" ]; then
+            mv "$OLD_TREE" "$NEW_TREE"
+          else
+            echo "::error::Generated device tree path not found!"
+            exit 1
+          fi
+        fi
+        # 내부 makefile 이름 및 기기명 정리
+        OLD_CODENAME=$(basename "$OLD_TREE")
+        if [ -f "$NEW_TREE/omni_${OLD_CODENAME}.mk" ]; then
+          mv "$NEW_TREE/omni_${OLD_CODENAME}.mk" "$NEW_TREE/omni_gtaxlwifi.mk"
+        fi
+        grep -RIl "$OLD_CODENAME" "$NEW_TREE" | xargs -r sed -i "s/${OLD_CODENAME}/gtaxlwifi/g"
+        echo "device_name=gtaxlwifi" >> $GITHUB_OUTPUT
+        echo "makefile_name=omni_gtaxlwifi" >> $GITHUB_OUTPUT
+
     - name: Sync Device Dependencies
       run: |
-        bash ${GITHUB_WORKSPACE}/scripts/convert.sh ${{ steps.gdt.outputs.DEVICE_PATH }}/${{ steps.buildtree.outputs.value }}.dependencies
-        repo sync -j$(nproc --all)
+        bash ${GITHUB_WORKSPACE}/scripts/convert.sh device/samsung/gtaxlwifi/${{ steps.buildtree.outputs.value }}.dependencies
+        repo sync -j4
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
       continue-on-error: true
 
@@ -142,7 +173,7 @@ jobs:
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
         export LC_ALL=C
-        lunch omni_${{ steps.gdt.outputs.DEVICE_NAME }}-eng
+        lunch omni_${{ steps.normalize.outputs.makefile_name }}-eng
         make clean
         make ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc --all)
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
@@ -151,14 +182,14 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         files: | 
-          workspace/out/target/product/${{ steps.gdt.outputs.DEVICE_NAME }}/${{ github.event.inputs.BUILD_TARGET }}.img
-          workspace/out/target/product/${{ steps.gdt.outputs.DEVICE_NAME }}/*.zip
-          workspace/out/target/product/${{ steps.gdt.outputs.DEVICE_NAME }}/*vendor*.img
-        name: ${{ steps.gdt.outputs.DEVICE_NAME }}-${{ github.run_id }}
+          workspace/out/target/product/gtaxlwifi/${{ github.event.inputs.BUILD_TARGET }}.img
+          workspace/out/target/product/gtaxlwifi/*.zip
+          workspace/out/target/product/gtaxlwifi/*vendor*.img
+        name: gtaxlwifi-${{ github.run_id }}
         tag_name: ${{ github.run_id }}
         body: |
           Manifest: ${{ github.event.inputs.MANIFEST_BRANCH }}
-          Device: ${{ steps.gdt.outputs.DEVICE_NAME }}
+          Device: gtaxlwifi
           Target: ${{ github.event.inputs.BUILD_TARGET }}.img
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
