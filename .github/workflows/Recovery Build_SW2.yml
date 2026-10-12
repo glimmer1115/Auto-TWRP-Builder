@@ -142,17 +142,23 @@ jobs:
           fi
         fi
         OLD_CODENAME=$(basename "$OLD_TREE")
-        if [ -f "$NEW_TREE/omni_${OLD_CODENAME}.mk" ]; then
-          mv "$NEW_TREE/omni_${OLD_CODENAME}.mk" "$NEW_TREE/omni_gtaxlwifi.mk"
-        fi
+        
+        # 메이크파일 명칭 정리 (omni_gtaxlwifi.mk로 강제 통일)
+        cd "$NEW_TREE"
+        for f in *.mk; do
+          if [[ "$f" == omni_*.mk ]] || [[ "$f" == twrp_*.mk ]]; then
+            mv "$f" "omni_gtaxlwifi.mk"
+            break
+          fi
+        done
+        cd - > /dev/null
+
         grep -RIl "$OLD_CODENAME" "$NEW_TREE" | xargs -r sed -i "s/${OLD_CODENAME}/gtaxlwifi/g"
         
-        # soong_namespace 관련 구형 빌드 에러 방지 처리
         if [ -f "$NEW_TREE/Android.bp" ]; then
           sed -i '/soong_namespace/d' "$NEW_TREE/Android.bp" || true
         fi
 
-        echo "device_name=gtaxlwifi" >> $GITHUB_OUTPUT
         echo "makefile_name=omni_gtaxlwifi" >> $GITHUB_OUTPUT
 
     - name: Sync Device Dependencies
@@ -178,7 +184,7 @@ jobs:
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
         export LC_ALL=C
-        lunch omni_${{ steps.normalize.outputs.makefile_name }}-eng
+        lunch ${{ steps.normalize.outputs.makefile_name }}-eng
         make clean
         make ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc --all)
       working-directory: ${{ steps.pwd.outputs.workspace-folder }}
