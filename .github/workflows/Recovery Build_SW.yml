@@ -129,42 +129,73 @@ jobs:
         working-directory: ${{ steps.pwd.outputs.workspace-folder }}
         run: |
           set -e
-          OLD_TREE="${{ steps.gdt.outputs.DEVICE_PATH }}"
-          NEW_TREE="device/samsung/gtaxlwifi"
-          echo "Old tree path: $OLD_TREE"
-          if [ "$OLD_TREE" != "$NEW_TREE" ]; then
-            mkdir -p device/samsung
-            rm -rf "$NEW_TREE"
-            if [ -d "$OLD_TREE" ]; then
-              mv "$OLD_TREE" "$NEW_TREE"
-            else
-              echo "::error::Generated device tree path not found!"
-              exit 1
-            fi
+          TREE="${{ steps.gdt.outputs.DEVICE_PATH }}"
+          echo "Generated tree path: $TREE"
+          if [ ! -d "$TREE" ]; then
+            echo "::error::Generated device tree path not found!"
+            exit 1
           fi
-          OLD_CODENAME=$(basename "$OLD_TREE")
-          
-          cd "$NEW_TREE"
-          for f in *.mk; do
-            if [[ "$f" == omni_*.mk ]] || [[ "$f" == twrp_*.mk ]]; then
-              mv "$f" "omni_gtaxlwifi.mk"
+          CODENAME=$(basename "$TREE")
+
+          cd "$TREE"
+          MK=""
+          for f in omni_*.mk twrp_*.mk; do
+            if [ -f "$f" ]; then
+              MK="$f"
               break
             fi
           done
+          if [ -z "$MK" ]; then
+            echo "::error::No omni_/twrp_ makefile found in $TREE"
+            ls -l
+            exit 1
+          fi
+          # keep the codename, only normalize the prefix to omni_ (twrp-8.1 uses omni)
+          if [[ "$MK" == twrp_* ]]; then
+            mv "$MK" "omni_${CODENAME}.mk"
+            MK="omni_${CODENAME}.mk"
+          fi
           cd - > /dev/null
 
-          grep -RIl "$OLD_CODENAME" "$NEW_TREE" | xargs -r sed -i "s/${OLD_CODENAME}/gtaxlwifi/g"
-          
-          if [ -f "$NEW_TREE/Android.bp" ]; then
-            rm -f "$NEW_TREE/Android.bp"
-          fi
+          rm -f "$TREE/Android.bp"
 
-          echo "makefile_name=omni_gtaxlwifi" >> $GITHUB_OUTPUT
+          echo "codename=${CODENAME}" >> $GITHUB_OUTPUT
+          echo "tree=${TREE}" >> $GITHUB_OUTPUT
+          echo "makefile_name=${MK%.mk}" >> $GITHUB_OUTPUT
+          echo "Codename: $CODENAME / Makefile: ${MK%.mk}"
+
+      - name: Apply SM-T583 device values
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        run: |
+          # Values read from the real device (SM-T583, gtaxladwifikx)
+          # recovery = /dev/block/mmcblk0p11 = 38912 KB = 39845888 bytes
+          # panel backlight: /sys/class/backlight/panel, max_brightness 306
+          # fb0: 1200x1920, 32 bpp
+          cat >> "${{ steps.normalize.outputs.tree }}/BoardConfig.mk" << 'EOT'
+
+          # ---- values measured on the real SM-T583 ----
+          BOARD_RECOVERYIMAGE_PARTITION_SIZE := 39845888
+          TARGET_SCREEN_WIDTH := 1200
+          TARGET_SCREEN_HEIGHT := 1920
+          TW_BRIGHTNESS_PATH := /sys/class/backlight/panel/brightness
+          TW_MAX_BRIGHTNESS := 306
+          TW_DEFAULT_BRIGHTNESS := 150
+          EOT
+
+      - name: Show generated tree
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        run: |
+          cd "${{ steps.normalize.outputs.tree }}"
+          ls -l
+          echo "== BoardConfig.mk =="
+          cat BoardConfig.mk
+          echo "== fstab =="
+          find . -name "*.fstab" -exec sh -c 'echo "--- $1"; cat "$1"' _ {} \;
 
       - name: Sync Device Dependencies
         run: |
-          if [ -f "device/samsung/gtaxlwifi/${{ steps.buildtree.outputs.value }}.dependencies" ]; then
-            bash ${GITHUB_WORKSPACE}/scripts/convert.sh device/samsung/gtaxlwifi/${{ steps.buildtree.outputs.value }}.dependencies
+          if [ -f "${{ steps.normalize.outputs.tree }}/${{ steps.buildtree.outputs.value }}.dependencies" ]; then
+            bash ${GITHUB_WORKSPACE}/scripts/convert.sh ${{ steps.normalize.outputs.tree }}/${{ steps.buildtree.outputs.value }}.dependencies
             repo sync -j4
           else
             echo "Dependencies file not found, skipping..."
@@ -195,7 +226,7 @@ jobs:
       - name: Debug compare images
         working-directory: ${{ steps.pwd.outputs.workspace-folder }}
         run: |
-          OUT=out/target/product/gtaxlwifi
+          OUT=out/target/product/${{ steps.normalize.outputs.codename }}
           echo "== stock (input) =="
           ls -l recovery.img
           sha256sum recovery.img
@@ -206,7 +237,7 @@ jobs:
           echo -n "tail16: "; tail -c 16 "$OUT/${{ github.event.inputs.BUILD_TARGET }}.img"; echo
 
       - name: Package for Odin
-        working-directory: ${{ steps.pwd.outputs.workspace-folder }}/out/target/product/gtaxlwifi
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}/out/target/product/${{ steps.normalize.outputs.codename }}
         run: |
           set -e
           IMG="${{ github.event.inputs.BUILD_TARGET }}.img"
@@ -229,15 +260,15 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: | 
-            workspace/out/target/product/gtaxlwifi/${{ github.event.inputs.BUILD_TARGET }}.img
-            workspace/out/target/product/gtaxlwifi/recovery_odin.tar.md5
-            workspace/out/target/product/gtaxlwifi/*.zip
-            workspace/out/target/product/gtaxlwifi/*vendor*.img
-          name: gtaxlwifi-${{ github.run_id }}
+            workspace/out/target/product/${{ steps.normalize.outputs.codename }}/${{ github.event.inputs.BUILD_TARGET }}.img
+            workspace/out/target/product/${{ steps.normalize.outputs.codename }}/recovery_odin.tar.md5
+            workspace/out/target/product/${{ steps.normalize.outputs.codename }}/*.zip
+            workspace/out/target/product/${{ steps.normalize.outputs.codename }}/*vendor*.img
+          name: ${{ steps.normalize.outputs.codename }}-${{ github.run_id }}
           tag_name: ${{ github.run_id }}
           body: |
             Manifest: ${{ github.event.inputs.MANIFEST_BRANCH }}
-            Device: gtaxlwifi
+            Device: ${{ steps.normalize.outputs.codename }}
             Target: ${{ github.event.inputs.BUILD_TARGET }}.img
             Odin: flash recovery_odin.tar.md5 in the AP slot (Auto Reboot OFF)
         env:
