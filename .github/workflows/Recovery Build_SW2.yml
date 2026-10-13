@@ -14,7 +14,7 @@ on:
       MANIFEST_BRANCH:
         description: 'MANIFEST_BRANCH'
         required: true
-        default: 'twrp-8.1'
+        default: 'twrp-12.1'
       BUILD_TARGET:
         description: 'BUILD_TARGET'
         required: true
@@ -159,6 +159,37 @@ jobs:
           fi
 
           echo "makefile_name=omni_gtaxlwifi" >> $GITHUB_OUTPUT
+
+      - name: Inject Custom BoardConfig and Recovery Fstab
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        run: |
+          echo "Injecting custom BoardConfig.mk settings..."
+          cat << 'EOF' >> device/samsung/gtaxlwifi/BoardConfig.mk
+
+          # --- Custom Display & Partition Settings for gtaxlwifi ---
+          BOARD_RECOVERY_SCREEN_WIDTH := 1200
+          BOARD_RECOVERY_SCREEN_HEIGHT := 1920
+          BOARD_RECOVERYIMAGE_PARTITION_SIZE := 31457280
+          EOF
+
+          echo "Injecting custom recovery.fstab..."
+          cat << 'EOF' > device/samsung/gtaxlwifi/recovery.fstab
+          /boot		emmc	/dev/block/platform/13540000.dwmmc0/by-name/BOOT
+          /recovery	emmc	/dev/block/platform/13540000.dwmmc0/by-name/RECOVERY	flags=backup=1
+          /system		ext4	/dev/block/platform/13540000.dwmmc0/by-name/SYSTEM
+          /system_image	emmc	/dev/block/platform/13540000.dwmmc0/by-name/SYSTEM	flags=flashimg=1
+          /data		ext4	/dev/block/platform/13540000.dwmmc0/by-name/USERDATA	flags=encryptable=footer;length=-20480
+          /cache		ext4	/dev/block/platform/13540000.dwmmc0/by-name/CACHE
+          /modem		emmc	/dev/block/platform/13540000.dwmmc0/by-name/RADIO	flags=backup=1;display="Modem"
+          /modem-cdma	emmc	/dev/block/platform/13540000.dwmmc0/by-name/CDMA-RADIO	flags=backup=1;display="CDMA Modem";subpartitionof=/modem
+          /efs		ext4	/dev/block/platform/13540000.dwmmc0/by-name/EFS		flags=backup=1;display="EFS"
+          /cpefs		emmc	/dev/block/platform/13540000.dwmmc0/by-name/CPEFS	flags=backup=1;display="CPEFS";subpartitionof=/efs
+          /m9kefs1	emmc	/dev/block/platform/13540000.dwmmc0/by-name/m9kefs1	flags=backup=1;subpartitionof=/efs
+          /m9kefs2	emmc	/dev/block/platform/13540000.dwmmc0/by-name/m9kefs2	flags=backup=1;subpartitionof=/efs
+          /m9kefs3	emmc	/dev/block/platform/13540000.dwmmc0/by-name/m9kefs3	flags=backup=1;subpartitionof=/efs
+          /external_sd	vfat	/dev/block/mmcblk1p1 /dev/block/mmcblk1			flags=display="Micro SDcard";storage;wipeingui;removable
+          /usb-otg	vfat	/dev/block/sda1 /dev/block/sda				flags=display="USB-OTG";storage;wipeingui;removable
+          EOF
 
       - name: Sync Device Dependencies
         run: |
