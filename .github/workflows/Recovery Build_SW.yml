@@ -110,6 +110,7 @@ jobs:
           fi
           ls -l recovery.img
           file recovery.img
+          sha256sum recovery.img
           if [ "$(head -c 8 recovery.img)" != "ANDROID!" ]; then
             echo "::error::recovery.img is not an Android boot image (HTML page or wrong file?)"
             head -c 300 recovery.img
@@ -191,11 +192,45 @@ jobs:
           make ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc --all)
         working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
+      - name: Debug compare images
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        run: |
+          OUT=out/target/product/gtaxlwifi
+          echo "== stock (input) =="
+          ls -l recovery.img
+          sha256sum recovery.img
+          echo "== built (output) =="
+          ls -l "$OUT"
+          sha256sum "$OUT/${{ github.event.inputs.BUILD_TARGET }}.img"
+          strings "$OUT/${{ github.event.inputs.BUILD_TARGET }}.img" | grep -i -m5 twrp || echo "no twrp string"
+          echo -n "tail16: "; tail -c 16 "$OUT/${{ github.event.inputs.BUILD_TARGET }}.img"; echo
+
+      - name: Package for Odin
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}/out/target/product/gtaxlwifi
+        run: |
+          set -e
+          IMG="${{ github.event.inputs.BUILD_TARGET }}.img"
+          # Odin AP slot expects a tar whose entry is named recovery.img
+          cp "$IMG" recovery.img.odin
+          if [ "$(tail -c 16 recovery.img.odin)" != "SEANDROIDENFORCE" ]; then
+            echo -n "SEANDROIDENFORCE" >> recovery.img.odin
+          fi
+          mkdir -p odin_pkg
+          cp recovery.img.odin odin_pkg/recovery.img
+          (cd odin_pkg && tar -H ustar -c recovery.img > ../recovery_odin.tar)
+          md5sum -t recovery_odin.tar >> recovery_odin.tar
+          mv recovery_odin.tar recovery_odin.tar.md5
+          echo "== tar contents =="
+          tar -tvf recovery_odin.tar.md5 2>/dev/null || true
+          echo -n "tail16: "; tail -c 16 odin_pkg/recovery.img; echo
+          ls -l recovery_odin.tar.md5 odin_pkg/recovery.img
+
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
         with:
           files: | 
             workspace/out/target/product/gtaxlwifi/${{ github.event.inputs.BUILD_TARGET }}.img
+            workspace/out/target/product/gtaxlwifi/recovery_odin.tar.md5
             workspace/out/target/product/gtaxlwifi/*.zip
             workspace/out/target/product/gtaxlwifi/*vendor*.img
           name: gtaxlwifi-${{ github.run_id }}
@@ -204,5 +239,6 @@ jobs:
             Manifest: ${{ github.event.inputs.MANIFEST_BRANCH }}
             Device: gtaxlwifi
             Target: ${{ github.event.inputs.BUILD_TARGET }}.img
+            Odin: flash recovery_odin.tar.md5 in the AP slot (Auto Reboot OFF)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
