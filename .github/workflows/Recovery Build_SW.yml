@@ -5,26 +5,34 @@
           BC_FILE="$TREE_PATH/BoardConfig.mk"
           MK_FILE="$TREE_PATH/${{ steps.normalize.outputs.makefile_name }}.mk"
           
-          # 자동 주입 파서가 기입한 퀄컴(Snapdragon) 잔재 코드 소거
+          # [핵심 보정 1] 자동 파서가 잘못 주입한 퀄컴 부팅 주소 및 커맨드라인 세션 전면 거세 (충돌 방지)
           sed -i '/BOARD_KERNEL_CMDLINE/d' "$BC_FILE"
           sed -i '/TARGET_BOOTLOADER_BOARD_NAME/d' "$BC_FILE"
           sed -i '/BOARD_KERNEL_BASE/d' "$BC_FILE"
+          sed -i '/BOARD_KERNEL_PAGESIZE/d' "$BC_FILE"
+          sed -i '/BOARD_KERNEL_TAGS_OFFSET/d' "$BC_FILE"
+          sed -i '/BOARD_RAMDISK_OFFSET/d' "$BC_FILE"
+          sed -i '/BOARD_MKBOOTIMG_ARGS/d' "$BC_FILE"
           
-          # 실측 데이터 및 Exynos 7870 그래픽 하드웨어 강제 고정 주입 (백라이트 블랙스크린 해결)
+          # [핵심 보정 2] 실측 데이터 및 Exynos 7870 부팅/그래픽 아키텍처 규격 강제 주입
           cat >> "$BC_FILE" << 'EOT'
 
           # ---- SM-T583 Real Hardware Override Specifications ----
           BOARD_VENDOR := samsung
           TARGET_BOOTLOADER_BOARD_NAME := universal7870
           
-          # [핵심 보정] 부트로더가 커널을 올바른 램 주소에 매핑하도록 베이스 주소 강제 교정
+          # 삼성 엑시노스 7870 공식 부팅 메모리 주소 및 매개변수 강제 동기화
           BOARD_KERNEL_BASE := 0x10000000
+          BOARD_KERNEL_PAGESIZE := 2048
+          BOARD_KERNEL_TAGS_OFFSET := 0x00000100
+          BOARD_RAMDISK_OFFSET := 0x01000000
           BOARD_KERNEL_CMDLINE := androidboot.hardware=gtaxladwifikx androidboot.selinux=permissive cma=128M
+          BOARD_MKBOOTIMG_ARGS := --kernel_offset 0x00000000 --ramdisk_offset 0x01000000 --tags_offset 0x00000100
 
           # 실측 리커버리 파티션 용량 강제 매핑 (39845888 bytes)
           BOARD_RECOVERYIMAGE_PARTITION_SIZE := 39845888
           
-          # 실측 디스플레이 세팅 및 32bpp 프레임버퍼 리눅스 FB 가속 강제화
+          # 실측 디스플레이 세팅 및 32bpp 프레임버퍼 리눅스 FB 가속 강제화 (백라이트 흑화 탈출용)
           BOARD_RECOVERY_SCREEN_WIDTH := 1200
           BOARD_RECOVERY_SCREEN_HEIGHT := 1920
           TARGET_RECOVERY_PIXEL_FORMAT := "BGRA_8888"
