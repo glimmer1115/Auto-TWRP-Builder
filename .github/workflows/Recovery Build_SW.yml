@@ -6,7 +6,7 @@ on:
       IMG_URL:
         description: 'IMG_URL (optional). Leave EMPTY to use recovery.img committed in the repo root'
         required: false
-        default: ''
+        default: 'https://github.com/glimmer1115/Auto-TWRP-Builder/raw/refs/heads/master/recovery.img'
       MANIFEST_URL:
         description: 'MANIFEST_URL'
         required: true
@@ -14,7 +14,7 @@ on:
       MANIFEST_BRANCH:
         description: 'MANIFEST_BRANCH'
         required: true
-        default: 'twrp-12.1'
+        default: 'twrp-8.1'
       BUILD_TARGET:
         description: 'BUILD_TARGET'
         required: true
@@ -46,7 +46,8 @@ jobs:
         run: |
           sudo apt update
           sudo apt -y upgrade
-          sudo apt -y install gperf gcc-multilib gcc-10-multilib g++-multilib g++-10-multilib libc6-dev lib32ncurses5-dev x11proto-core-dev libx11-dev tree lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc bc ccache lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libwxgtk3.0-gtk3-dev libxml2 lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev libncurses5 python3 python3-pip cpio wget file
+          sudo apt -y install gperf gcc-multilib gcc-10-multilib g++-multilib g++-10-multilib libc6-dev lib32ncurses5-dev x11proto-core-dev libx11-dev tree lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc bc ccache lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libwxgtk3.0-gtk3-dev libxml2 lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev libncurses5 python3
+          sudo apt -y install python3 python3-pip cpio wget file
           pip3 install twrpdtgen
 
       - name: Install OpenJDK
@@ -69,7 +70,7 @@ jobs:
           chmod a+x ~/bin/repo
           sudo ln -sf ~/bin/repo /usr/bin/repo
 
-      - name: Initialize repo
+      - name: Initialize repo (Anti-Error 1/6 Patch)
         id: pwd
         run: |
           mkdir workspace
@@ -77,8 +78,7 @@ jobs:
           echo "workspace-folder=$(pwd)" >> $GITHUB_OUTPUT
           git config --global user.name "azwhikaru"
           git config --global user.email "azwhikaru+37921907@github.com"
-          
-          repo init --depth=1 --no-repo-verify -u ${{ github.event.inputs.MANIFEST_URL }} -b ${{ github.event.inputs.MANIFEST_BRANCH }}
+          repo init -u ${{ github.event.inputs.MANIFEST_URL }} -b ${{ github.event.inputs.MANIFEST_BRANCH }} --no-repo-verify
 
       - name: Check Build Tree
         uses: haya14busa/action-cond@v1
@@ -88,12 +88,12 @@ jobs:
           if_true: twrp
           if_false: omni
 
-      - name: Repo Sync
+      - name: Repo Sync (Robust Retry Loop)
         run: |
-          for i in {1..3}; do
-            repo sync -j4 --force-sync --no-clone-bundle --current-branch && break
-            echo "Repo sync failed, retrying..."
-            sleep 5
+          for i in {1..5}; do
+            repo sync -j4 --force-sync --no-clone-bundle && break
+            echo "Repo sync failed on attempt $i, retrying in 10 seconds..."
+            sleep 10
           done
         working-directory: workspace
 
@@ -136,7 +136,6 @@ jobs:
             exit 1
           fi
           CODENAME=$(basename "$TREE")
-
           cd "$TREE"
           MK=""
           for f in omni_*.mk twrp_*.mk; do
@@ -150,68 +149,37 @@ jobs:
             ls -l
             exit 1
           fi
-          if [[ "$MK" == omni_* ]]; then
-            mv "$MK" "twrp_${CODENAME}.mk"
-            MK="twrp_${CODENAME}.mk"
+          if [[ "$MK" == twrp_* ]]; then
+            mv "$MK" "omni_${CODENAME}.mk"
+            MK="omni_${CODENAME}.mk"
           fi
           cd - > /dev/null
-
           rm -f "$TREE/Android.bp"
-
           echo "codename=${CODENAME}" >> $GITHUB_OUTPUT
           echo "tree=${TREE}" >> $GITHUB_OUTPUT
           echo "makefile_name=${MK%.mk}" >> $GITHUB_OUTPUT
           echo "Codename: $CODENAME / Makefile: ${MK%.mk}"
 
-      - name: Apply SM-T583 Real Hardware Spec
+      - name: Apply SM-T583 device values (Chat Context Integrated)
         working-directory: ${{ steps.pwd.outputs.workspace-folder }}
         run: |
-          TREE_PATH="${{ steps.normalize.outputs.tree }}"
-          BC_FILE="$TREE_PATH/BoardConfig.mk"
-          MK_FILE="$TREE_PATH/${{ steps.normalize.outputs.makefile_name }}.mk"
-          
-          sed -i '/BOARD_KERNEL_CMDLINE/d' "$BC_FILE"
-          sed -i '/TARGET_BOOTLOADER_BOARD_NAME/d' "$BC_FILE"
-          
-          cat >> "$BC_FILE" << 'EOT'
-
-          # ---- SM-T583 Real Hardware Override Specifications ----
-          BOARD_VENDOR := samsung
-          TARGET_BOOTLOADER_BOARD_NAME := universal7870
-          BOARD_KERNEL_CMDLINE := androidboot.hardware=gtaxladwifikx androidboot.selinux=permissive
-
+          cat >> "${{ steps.normalize.outputs.tree }}/BoardConfig.mk" << 'EOT'
+          # ---- SM-T583 Verified Parameters ----
           BOARD_RECOVERYIMAGE_PARTITION_SIZE := 39845888
-          
-          BOARD_RECOVERY_SCREEN_WIDTH := 1200
-          BOARD_RECOVERY_SCREEN_HEIGHT := 1920
-          TARGET_RECOVERY_PIXEL_FORMAT := "BGRA_8888"
-          RECOVERY_GRAPHICS_USE_LINUX_FB := true
-
-          TW_THEME := portrait_hdpi
-          TW_SCREEN_BLANK_ON_BOOT := true
-          TW_BRIGHTNESS_PATH := "/sys/class/backlight/panel/brightness"
+          TARGET_SCREEN_WIDTH := 1200
+          TARGET_SCREEN_HEIGHT := 1920
+          TW_BRIGHTNESS_PATH := /sys/class/backlight/panel/brightness
           TW_MAX_BRIGHTNESS := 306
-          TW_DEFAULT_BRIGHTNESS := 180
-          BOARD_HAS_MTK_HARDWARE := false
+          TW_DEFAULT_BRIGHTNESS := 150
           EOT
-          
-          if [ -f "$MK_FILE" ]; then
-            sed -i 's/PRODUCT_RELEASE_NAME := .*/PRODUCT_RELEASE_NAME := gtaxladwifikx/g' "$MK_FILE"
-            sed -i 's/PRODUCT_DEVICE := .*/PRODUCT_DEVICE := gtaxladwifikx/g' "$MK_FILE"
-            sed -i 's/PRODUCT_MODEL := .*/PRODUCT_MODEL := SM-T583/g' "$MK_FILE"
-            sed -i 's/PRODUCT_NAME := .*/PRODUCT_NAME := twrp_gtaxladwifikx/g' "$MK_FILE"
-            sed -i 's/aosp_base_telephony.mk/aosp_base_core.mk/g' "$MK_FILE"
-          fi
 
-      - name: Show verified tree
+      - name: Show generated tree
         working-directory: ${{ steps.pwd.outputs.workspace-folder }}
         run: |
           cd "${{ steps.normalize.outputs.tree }}"
           ls -l
           echo "== BoardConfig.mk =="
           cat BoardConfig.mk
-          echo "== Product MakeFile == "
-          cat ${{ steps.normalize.outputs.makefile_name }}.mk
           echo "== fstab =="
           find . -name "*.fstab" -exec sh -c 'echo "--- $1"; cat "$1"' _ {} \;
 
@@ -230,19 +198,68 @@ jobs:
         with:
           swap-size-gb: 12
 
+      - name: Switch to Python2
+        run: |
+          sudo apt -y install python2
+          sudo ln -sf /usr/bin/python2 /usr/bin/python
+          python --version
+
       - name: Building recovery
         run: |
           source build/envsetup.sh
           export ALLOW_MISSING_DEPENDENCIES=true
           export LC_ALL=C
-          lunch twrp_gtaxladwifikx-eng
+          lunch ${{ steps.normalize.outputs.makefile_name }}-eng
           make clean
-          mka recoveryimage -j$(nproc)
+          make ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc --all)
         working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+      - name: Debug compare images
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        run: |
+          OUT=out/target/product/${{ steps.normalize.outputs.codename }}
+          echo "== stock (input) =="
+          ls -l recovery.img
+          sha256sum recovery.img
+          echo "== built (output) =="
+          ls -l "$OUT"
+          sha256sum "$OUT/${{ github.event.inputs.BUILD_TARGET }}.img"
+          strings "$OUT/${{ github.event.inputs.BUILD_TARGET }}.img" | grep -i -m5 twrp || echo "no twrp string"
+          echo -n "tail16: "; tail -c 16 "$OUT/${{ github.event.inputs.BUILD_TARGET }}.img"; echo
+
+      - name: Package for Odin (ustar format)
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}/out/target/product/${{ steps.normalize.outputs.codename }}
+        run: |
+          set -e
+          IMG="${{ github.event.inputs.BUILD_TARGET }}.img"
+          cp "$IMG" recovery.img.odin
+          if [ "$(tail -c 16 recovery.img.odin)" != "SEANDROIDENFORCE" ]; then
+            echo -n "SEANDROIDENFORCE" >> recovery.img.odin
+          fi
+          mkdir -p odin_pkg
+          cp recovery.img.odin odin_pkg/recovery.img
+          (cd odin_pkg && tar -H ustar -c recovery.img > ../recovery_odin.tar)
+          md5sum -t recovery_odin.tar >> recovery_odin.tar
+          mv recovery_odin.tar recovery_odin.tar.md5
+          echo "== tar contents =="
+          tar -tvf recovery_odin.tar.md5 2>/dev/null || true
+          echo -n "tail16: "; tail -c 16 odin_pkg/recovery.img; echo
+          ls -l recovery_odin.tar.md5 odin_pkg/recovery.img
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v1
         with:
-          name: TWRP-SM-T583-Build
-          path: |
-            workspace/out/target/product/gtaxladwifikx/recovery.img
+          files: |
+            workspace/out/target/product/${{ steps.normalize.outputs.codename }}/${{ github.event.inputs.BUILD_TARGET }}.img
+            workspace/out/target/product/${{ steps.normalize.outputs.codename }}/recovery_odin.tar.md5
+            workspace/out/target/product/${{ steps.normalize.outputs.codename }}/*.zip
+            workspace/out/target/product/${{ steps.normalize.outputs.codename }}/*vendor*.img
+          name: ${{ steps.normalize.outputs.codename }}-${{ github.run_id }}
+          tag_name: ${{ github.run_id }}
+          body: |
+            Manifest: ${{ github.event.inputs.MANIFEST_BRANCH }}
+            Device: ${{ steps.normalize.outputs.codename }}
+            Target: ${{ github.event.inputs.BUILD_TARGET }}.img
+            Odin: flash recovery_odin.tar.md5 in the AP slot (Auto Reboot OFF)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
