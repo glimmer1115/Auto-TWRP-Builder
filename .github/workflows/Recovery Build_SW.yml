@@ -65,8 +65,9 @@ jobs:
 
       - name: Install repo
         run: |
-          mkdir ~/bin
-          curl https://googleapis.com > ~/bin/repo
+          mkdir -p ~/bin
+          # 구글 스토리지 404/HTML 우회: 신뢰할 수 있는 공식 미러 런타임 소스 사용
+          curl https://githubusercontent.com > ~/bin/repo
           chmod a+x ~/bin/repo
           sudo ln -sf ~/bin/repo /usr/bin/repo
 
@@ -150,9 +151,10 @@ jobs:
             ls -l
             exit 1
           fi
-          if [[ "$MK" == twrp_* ]]; then
-            mv "$MK" "omni_${CODENAME}.mk"
-            MK="omni_${CODENAME}.mk"
+          # 12.1 엔진 가이드라인에 맞추어 twrp_ 접두사 폴더 규격 자동 변환 보정
+          if [[ "$MK" == omni_* ]]; then
+            mv "$MK" "twrp_${CODENAME}.mk"
+            MK="twrp_${CODENAME}.mk"
           fi
           cd - > /dev/null
 
@@ -170,23 +172,25 @@ jobs:
           BC_FILE="$TREE_PATH/BoardConfig.mk"
           MK_FILE="$TREE_PATH/${{ steps.normalize.outputs.makefile_name }}.mk"
           
-          # 자동 생성기가 복사해 온 퀄컴 찌꺼기 라인들 전체 거세
+          # 자동 생성 스크립트가 뱉어낸 퀄컴 찌꺼기 라인 완전 삭제
           sed -i '/BOARD_KERNEL_CMDLINE/d' "$BC_FILE"
           
-          # 실측 디바이스 기반 엑시노스 전용 그래픽 및 패널 파라미터 강제 오버라이딩 주입
+          # 실측 디바이스 기반 엑시노스 7870 최적화 파라미터 오버라이딩 주입
           cat >> "$BC_FILE" << 'EOT'
 
-          # ---- SM-T583 실측 정보 반영 디버깅 블록 ----
+          # ---- SM-T583 하드웨어 실측 디버깅 블록 ----
           BOARD_VENDOR := samsung
           TARGET_BOOTLOADER_BOARD_NAME := universal7870
           BOARD_KERNEL_CMDLINE := androidboot.hardware=gtaxladwifikx
 
+          # 실측 파티션 및 32bpp 프레임버퍼 설정
           BOARD_RECOVERYIMAGE_PARTITION_SIZE := 39845888
           BOARD_RECOVERY_SCREEN_WIDTH := 1200
           BOARD_RECOVERY_SCREEN_HEIGHT := 1920
           TARGET_RECOVERY_PIXEL_FORMAT := "BGRA_8888"
           RECOVERY_GRAPHICS_USE_LINUX_FB := true
 
+          # 실측 백라이트 및 드라이버 제어권 동기화
           TW_THEME := portrait_hdpi
           TW_SCREEN_BLANK_ON_BOOT := true
           TW_BRIGHTNESS_PATH := "/sys/class/backlight/panel/brightness"
@@ -195,12 +199,12 @@ jobs:
           BOARD_HAS_MTK_HARDWARE := false
           EOT
           
-          # 메이크파일 내부 의존성 이름들도 일괄 실측값인 gtaxladwifikx로 강제 트레이싱
+          # 메이크파일 내부 빌드 종속성 지시자도 twrp_gtaxladwifikx 규격으로 완벽 치환
           if [ -f "$MK_FILE" ]; then
             sed -i 's/PRODUCT_RELEASE_NAME := .*/PRODUCT_RELEASE_NAME := gtaxladwifikx/g' "$MK_FILE"
             sed -i 's/PRODUCT_DEVICE := .*/PRODUCT_DEVICE := gtaxladwifikx/g' "$MK_FILE"
             sed -i 's/PRODUCT_MODEL := .*/PRODUCT_MODEL := SM-T583/g' "$MK_FILE"
-            sed -i 's/PRODUCT_NAME := .*/PRODUCT_NAME := omni_gtaxladwifikx/g' "$MK_FILE"
+            sed -i 's/PRODUCT_NAME := .*/PRODUCT_NAME := twrp_gtaxladwifikx/g' "$MK_FILE"
             sed -i 's/aosp_base_telephony.mk/aosp_base_core.mk/g' "$MK_FILE"
           fi
 
@@ -242,9 +246,10 @@ jobs:
           source build/envsetup.sh
           export ALLOW_MISSING_DEPENDENCIES=true
           export LC_ALL=C
-          lunch omni_gtaxladwifikx-eng
+          # 12.1 최신 빌드 시스템용 정식 lunch 및 mka 컴파일러 트리거
+          lunch twrp_gtaxladwifikx-eng
           make clean
-          make ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc)
+          mka recoveryimage -j$(nproc)
         working-directory: ${{ steps.pwd.outputs.workspace-folder }}
 
       - name: Upload Artifacts
