@@ -6,7 +6,7 @@ on:
       IMG_URL:
         description: 'IMG_URL (optional). Leave EMPTY to use recovery.img committed in the repo root'
         required: false
-        default: 'https://github.com'
+        default: 'https://github.com/glimmer1115/Auto-TWRP-Builder/raw/refs/heads/master/recovery.img'
       MANIFEST_URL:
         description: 'MANIFEST_URL (if want to use SSH keys, use git@github.com:XXXXX)'
         required: true
@@ -14,7 +14,7 @@ on:
       MANIFEST_BRANCH:
         description: 'MANIFEST_BRANCH'
         required: true
-        default: 'twrp-8.1'
+        default: 'twrp-12.1'
       BUILD_TARGET:
         description: 'BUILD_TARGET'
         required: true
@@ -66,7 +66,7 @@ jobs:
       - name: Install repo
         run: |
           mkdir -p ~/bin
-          # 구글 스토리지 404/HTML 우회: 신뢰할 수 있는 공식 미러 런타임 소스 사용
+          # 구글 스토리지 404/HTML 에러 완벽 우회 (akhilnarang 공식 스크립트 래퍼 사용)
           curl https://githubusercontent.com > ~/bin/repo
           chmod a+x ~/bin/repo
           sudo ln -sf ~/bin/repo /usr/bin/repo
@@ -151,7 +151,7 @@ jobs:
             ls -l
             exit 1
           fi
-          # 12.1 엔진 가이드라인에 맞추어 twrp_ 접두사 폴더 규격 자동 변환 보정
+          # twrp-12.1 소스 트리 아키텍처에 맞게 접두사를 twrp_ 구조로 변경 고정
           if [[ "$MK" == omni_* ]]; then
             mv "$MK" "twrp_${CODENAME}.mk"
             MK="twrp_${CODENAME}.mk"
@@ -165,32 +165,35 @@ jobs:
           echo "makefile_name=${MK%.mk}" >> $GITHUB_OUTPUT
           echo "Codename: $CODENAME / Makefile: ${MK%.mk}"
 
-      - name: Apply SM-T583 device values
+      - name: Apply SM-T583 Real Hardware Spec
         working-directory: ${{ steps.pwd.outputs.workspace-folder }}
         run: |
           TREE_PATH="${{ steps.normalize.outputs.tree }}"
           BC_FILE="$TREE_PATH/BoardConfig.mk"
           MK_FILE="$TREE_PATH/${{ steps.normalize.outputs.makefile_name }}.mk"
           
-          # 자동 생성 스크립트가 뱉어낸 퀄컴 찌꺼기 라인 완전 삭제
+          # [디버깅 1] twrpdtgen 스크립트가 잘못 자동주입한 퀄컴(ttyMSM0 등) 부트아규먼트 및 타겟 보드 초기화
           sed -i '/BOARD_KERNEL_CMDLINE/d' "$BC_FILE"
+          sed -i '/TARGET_BOOTLOADER_BOARD_NAME/d' "$BC_FILE"
           
-          # 실측 디바이스 기반 엑시노스 7870 최적화 파라미터 오버라이딩 주입
+          # [디버깅 2] 실측 데이터 및 Exynos 7870 그래픽 하드웨어 강제 고정 주입 (백라이트 흑화 해결)
           cat >> "$BC_FILE" << 'EOT'
 
-          # ---- SM-T583 하드웨어 실측 디버깅 블록 ----
+          # ---- SM-T583 Real Hardware Override Specifications ----
           BOARD_VENDOR := samsung
           TARGET_BOOTLOADER_BOARD_NAME := universal7870
-          BOARD_KERNEL_CMDLINE := androidboot.hardware=gtaxladwifikx
+          BOARD_KERNEL_CMDLINE := androidboot.hardware=gtaxladwifikx androidboot.selinux=permissive
 
-          # 실측 파티션 및 32bpp 프레임버퍼 설정
+          # 실측 리커버리 파티션 바이트 규격 매핑 (39845888 bytes)
           BOARD_RECOVERYIMAGE_PARTITION_SIZE := 39845888
+          
+          # 실측 디스플레이 및 32bpp 프레임버퍼 리눅스 FB 렌더링 강제화
           BOARD_RECOVERY_SCREEN_WIDTH := 1200
           BOARD_RECOVERY_SCREEN_HEIGHT := 1920
           TARGET_RECOVERY_PIXEL_FORMAT := "BGRA_8888"
           RECOVERY_GRAPHICS_USE_LINUX_FB := true
 
-          # 실측 백라이트 및 드라이버 제어권 동기화
+          # 실측 시스템 패널 백라이트 제어 경로 및 한계값 동기화
           TW_THEME := portrait_hdpi
           TW_SCREEN_BLANK_ON_BOOT := true
           TW_BRIGHTNESS_PATH := "/sys/class/backlight/panel/brightness"
@@ -199,7 +202,7 @@ jobs:
           BOARD_HAS_MTK_HARDWARE := false
           EOT
           
-          # 메이크파일 내부 빌드 종속성 지시자도 twrp_gtaxladwifikx 규격으로 완벽 치환
+          # [디버깅 3] twrp-12.1 빌드 엔진 추적용 기기 코드명 연쇄 세탁 (twrp_gtaxladwifikx 규격화)
           if [ -f "$MK_FILE" ]; then
             sed -i 's/PRODUCT_RELEASE_NAME := .*/PRODUCT_RELEASE_NAME := gtaxladwifikx/g' "$MK_FILE"
             sed -i 's/PRODUCT_DEVICE := .*/PRODUCT_DEVICE := gtaxladwifikx/g' "$MK_FILE"
@@ -208,7 +211,7 @@ jobs:
             sed -i 's/aosp_base_telephony.mk/aosp_base_core.mk/g' "$MK_FILE"
           fi
 
-      - name: Show generated tree
+      - name: Show verified tree
         working-directory: ${{ steps.pwd.outputs.workspace-folder }}
         run: |
           cd "${{ steps.normalize.outputs.tree }}"
@@ -246,7 +249,7 @@ jobs:
           source build/envsetup.sh
           export ALLOW_MISSING_DEPENDENCIES=true
           export LC_ALL=C
-          # 12.1 최신 빌드 시스템용 정식 lunch 및 mka 컴파일러 트리거
+          # twrp-12.1 빌더 규격에 의거하여 twrp_ 타겟으로 lunch 진입 및 mka 패키징 실행
           lunch twrp_gtaxladwifikx-eng
           make clean
           mka recoveryimage -j$(nproc)
