@@ -1,3 +1,173 @@
+name: Recovery Build (Legacy)
+
+on:
+  workflow_dispatch:
+    inputs:
+      IMG_URL:
+        description: 'IMG_URL (optional). Leave EMPTY to use recovery.img committed in the repo root'
+        required: false
+        default: 'https://github.com'
+      MANIFEST_URL:
+        description: 'MANIFEST_URL'
+        required: true
+        default: 'https://github.com'
+      MANIFEST_BRANCH:
+        description: 'MANIFEST_BRANCH'
+        required: true
+        default: 'twrp-12.1'
+      BUILD_TARGET:
+        description: 'BUILD_TARGET'
+        required: true
+        default: 'recovery'
+
+jobs:
+  build:
+    if: github.event.repository.owner.id == github.event.sender.id
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Display Run Parameters
+        run: |
+          echo "::group::User Environment Variables"
+          echo "Image URL: ${{ github.event.inputs.IMG_URL }}"
+          echo "Manifest URL: ${{ github.event.inputs.MANIFEST_URL }}"
+          echo "Manifest Branch: ${{ github.event.inputs.MANIFEST_BRANCH }}"
+          echo "Build Target: ${{ github.event.inputs.BUILD_TARGET }}.img"
+          echo "::endgroup::"
+
+      - name: Check Out
+        uses: actions/checkout@v4
+
+      - name: Cleanup
+        uses: rokibhasansagar/slimhub_actions@main
+
+      - name: Prepare the environment
+        run: |
+          sudo apt update
+          sudo apt -y upgrade
+          sudo apt -y install gperf gcc-multilib gcc-10-multilib g++-multilib g++-10-multilib libc6-dev lib32ncurses5-dev x11proto-core-dev libx11-dev tree lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc bc ccache lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libwxgtk3.0-gtk3-dev libxml2 lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev libncurses5 python3
+          sudo apt -y install python3 python3-pip cpio wget file
+          pip3 install twrpdtgen
+
+      - name: Install OpenJDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '8'
+
+      - name: Setup SSH Keys
+        if: ${{ startsWith(github.event.inputs.MANIFEST_URL, 'git@github.com') }}
+        uses: webfactory/ssh-agent@v0.5.4
+        with:
+            ssh-private-key: |
+                ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Install repo
+        run: |
+          # 런처 권한 충돌 방지 및 안전한 다운로드를 위해 최신 공식 독립 바이너리 설치
+          mkdir -p ~/bin
+          curl https://googleapis.com > ~/bin/repo
+          chmod a+x ~/bin/repo
+          sudo ln -sf ~/bin/repo /usr/bin/repo
+
+      - name: Initialize repo
+        id: pwd
+        run: |
+          mkdir workspace
+          cd workspace
+          echo "workspace-folder=$(pwd)" >> $GITHUB_OUTPUT
+          git config --global user.name "azwhikaru"
+          git config --global user.email "azwhikaru+37921907@github.com"
+          
+          # [핵심 패치 1] 입력창 주소 무시하고 glimmer1115 포크 저장소와 twrp-12.1 브랜치 강제 매핑 고정
+          repo init --depth=1 --no-repo-verify -u https://github.com -b twrp-12.1
+
+      - name: Check Build Tree
+        uses: haya14busa/action-cond@v1
+        id: buildtree
+        with:
+          cond: ${{ github.event.inputs.MANIFEST_BRANCH == 'twrp-11' || github.event.inputs.MANIFEST_BRANCH == 'twrp-12.1' }}
+          if_true: twrp
+          if_false: omni
+
+      - name: Repo Sync
+        run: |
+          # [핵심 패치 2] repo 업데이트 및 매니페스트 싱크 경고 우회 플래그 적용
+          for i in {1..3}; do
+            repo sync -j4 --force-sync --no-clone-bundle --current-branch && break
+            echo "Repo sync failed, retrying..."
+            sleep 5
+          done
+        working-directory: workspace
+
+      - name: Get recovery image
+        env:
+          IMG_URL: ${{ github.event.inputs.IMG_URL }}
+        run: |
+          if [ -n "$IMG_URL" ]; then
+            echo "Downloading $IMG_URL"
+            wget -O recovery.img "$IMG_URL"
+          else
+            echo "Using recovery.img from repository root"
+            cp "${GITHUB_WORKSPACE}/recovery.img" recovery.img
+          fi
+          ls -l recovery.img
+          file recovery.img
+          sha256sum recovery.img
+          if [ "$(head -c 8 recovery.img)" != "ANDROID!" ]; then
+            echo "::error::recovery.img is not an Android boot image (HTML page or wrong file?)"
+            head -c 300 recovery.img
+            exit 1
+          fi
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+
+      - name: Generate Device Tree
+        id: gdt
+        run: |
+          python3 ${GITHUB_WORKSPACE}/scripts/build.py -i recovery.img -o device
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+
+      - name: Normalize Device Tree
+        id: normalize
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        run: |
+          set -e
+          TREE="${{ steps.gdt.outputs.DEVICE_PATH }}"
+          echo "Generated tree path: $TREE"
+          if [ ! -d "$TREE" ]; then
+            echo "::error::Generated device tree path not found!"
+            exit 1
+          fi
+          CODENAME=$(basename "$TREE")
+
+          cd "$TREE"
+          MK=""
+          for f in omni_*.mk twrp_*.mk; do
+            if [ -f "$f" ]; then
+              MK="$f"
+              break
+            fi
+          done
+          if [ -z "$MK" ]; then
+            echo "::error::No omni_/twrp_ makefile found in $TREE"
+            ls -l
+            exit 1
+          fi
+          # twrp-12.1 엔진 탑재에 맞는 접두사 twrp_ 연쇄 강제 치환 고정
+          if [[ "$MK" == omni_* ]]; then
+            mv "$MK" "twrp_${CODENAME}.mk"
+            MK="twrp_${CODENAME}.mk"
+          fi
+          cd - > /dev/null
+
+          rm -f "$TREE/Android.bp"
+
+          echo "codename=${CODENAME}" >> $GITHUB_OUTPUT
+          echo "tree=${TREE}" >> $GITHUB_OUTPUT
+          echo "makefile_name=${MK%.mk}" >> $GITHUB_OUTPUT
+          echo "Codename: $CODENAME / Makefile: ${MK%.mk}"
+
       - name: Apply SM-T583 Real Hardware Spec
         working-directory: ${{ steps.pwd.outputs.workspace-folder }}
         run: |
@@ -5,34 +175,22 @@
           BC_FILE="$TREE_PATH/BoardConfig.mk"
           MK_FILE="$TREE_PATH/${{ steps.normalize.outputs.makefile_name }}.mk"
           
-          # [핵심 보정 1] 자동 파서가 잘못 주입한 퀄컴 부팅 주소 및 커맨드라인 세션 전면 거세 (충돌 방지)
+          # 자동 주입 파서가 기입한 퀄컴(Snapdragon) 잔재 코드 소거
           sed -i '/BOARD_KERNEL_CMDLINE/d' "$BC_FILE"
           sed -i '/TARGET_BOOTLOADER_BOARD_NAME/d' "$BC_FILE"
-          sed -i '/BOARD_KERNEL_BASE/d' "$BC_FILE"
-          sed -i '/BOARD_KERNEL_PAGESIZE/d' "$BC_FILE"
-          sed -i '/BOARD_KERNEL_TAGS_OFFSET/d' "$BC_FILE"
-          sed -i '/BOARD_RAMDISK_OFFSET/d' "$BC_FILE"
-          sed -i '/BOARD_MKBOOTIMG_ARGS/d' "$BC_FILE"
           
-          # [핵심 보정 2] 실측 데이터 및 Exynos 7870 부팅/그래픽 아키텍처 규격 강제 주입
+          # 실측 데이터 및 Exynos 7870 그래픽 하드웨어 강제 고정 주입 (백라이트 블랙스크린 해결)
           cat >> "$BC_FILE" << 'EOT'
 
           # ---- SM-T583 Real Hardware Override Specifications ----
           BOARD_VENDOR := samsung
           TARGET_BOOTLOADER_BOARD_NAME := universal7870
-          
-          # 삼성 엑시노스 7870 공식 부팅 메모리 주소 및 매개변수 강제 동기화
-          BOARD_KERNEL_BASE := 0x10000000
-          BOARD_KERNEL_PAGESIZE := 2048
-          BOARD_KERNEL_TAGS_OFFSET := 0x00000100
-          BOARD_RAMDISK_OFFSET := 0x01000000
-          BOARD_KERNEL_CMDLINE := androidboot.hardware=gtaxladwifikx androidboot.selinux=permissive cma=128M
-          BOARD_MKBOOTIMG_ARGS := --kernel_offset 0x00000000 --ramdisk_offset 0x01000000 --tags_offset 0x00000100
+          BOARD_KERNEL_CMDLINE := androidboot.hardware=gtaxladwifikx androidboot.selinux=permissive
 
           # 실측 리커버리 파티션 용량 강제 매핑 (39845888 bytes)
           BOARD_RECOVERYIMAGE_PARTITION_SIZE := 39845888
           
-          # 실측 디스플레이 세팅 및 32bpp 프레임버퍼 리눅스 FB 가속 강제화 (백라이트 흑화 탈출용)
+          # 실측 디스플레이 세팅 및 32bpp 프레임버퍼 리눅스 FB 가속 강제화
           BOARD_RECOVERY_SCREEN_WIDTH := 1200
           BOARD_RECOVERY_SCREEN_HEIGHT := 1920
           TARGET_RECOVERY_PIXEL_FORMAT := "BGRA_8888"
@@ -55,3 +213,53 @@
             sed -i 's/PRODUCT_NAME := .*/PRODUCT_NAME := twrp_gtaxladwifikx/g' "$MK_FILE"
             sed -i 's/aosp_base_telephony.mk/aosp_base_core.mk/g' "$MK_FILE"
           fi
+
+      - name: Show verified tree
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        run: |
+          cd "${{ steps.normalize.outputs.tree }}"
+          ls -l
+          echo "== BoardConfig.mk =="
+          cat BoardConfig.mk
+          echo "== Product MakeFile == "
+          cat ${{ steps.normalize.outputs.makefile_name }}.mk
+          echo "== fstab =="
+          find . -name "*.fstab" -exec sh -c 'echo "--- $1"; cat "$1"' _ {} \;
+
+      - name: Sync Device Dependencies
+        run: |
+          if [ -f "${{ steps.normalize.outputs.tree }}/${{ steps.buildtree.outputs.value }}.dependencies" ]; then
+            bash ${GITHUB_WORKSPACE}/scripts/convert.sh ${{ steps.normalize.outputs.tree }}/${{ steps.buildtree.outputs.value }}.dependencies
+            repo sync -j4
+          else
+            echo "Dependencies file not found, skipping..."
+          fi
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 12
+
+      - name: Switch to Python2
+        run: |
+          sudo apt -y install python2
+          sudo ln -sf /usr/bin/python2 /usr/bin/python
+          python --version
+
+      - name: Building recovery
+        run: |
+          source build/envsetup.sh
+          export ALLOW_MISSING_DEPENDENCIES=true
+          export LC_ALL=C
+          # twrp_ 타겟으로 정식 lunch 진입 및 mka 패키징 실행
+          lunch twrp_gtaxladwifikx-eng
+          make clean
+          mka recoveryimage -j$(nproc)
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: TWRP-SM-T583-Build
+          path: |
