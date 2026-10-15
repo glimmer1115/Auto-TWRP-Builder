@@ -6,7 +6,7 @@ on:
       IMG_URL:
         description: 'IMG_URL (optional). Leave EMPTY to use recovery.img committed in the repo root'
         required: false
-        default: 'https://github.com/glimmer1115/Auto-TWRP-Builder/raw/refs/heads/master/recovery.img'
+        default: 'https://github.com'
       MANIFEST_URL:
         description: 'MANIFEST_URL (if want to use SSH keys, use git@github.com:XXXXX)'
         required: true
@@ -65,11 +65,8 @@ jobs:
 
       - name: Install repo
         run: |
-          mkdir -p ~/bin
-          # 구글 스토리지 404/HTML 에러 완벽 우회 (akhilnarang 공식 스크립트 래퍼 사용)
-          curl https://githubusercontent.com > ~/bin/repo
-          chmod a+x ~/bin/repo
-          sudo ln -sf ~/bin/repo /usr/bin/repo
+          # curl 에러 해결을 위해 외부 주소 요청을 배제하고 apt 시스템 패키지로 내장 강제 설치
+          sudo apt update && sudo apt install -y repo
 
       - name: Initialize repo
         id: pwd
@@ -151,7 +148,7 @@ jobs:
             ls -l
             exit 1
           fi
-          # twrp-12.1 소스 트리 아키텍처에 맞게 접두사를 twrp_ 구조로 변경 고정
+          # twrp-12.1 아키텍처 규격 준수: 트위크 접두사 명칭 자동 고정화
           if [[ "$MK" == omni_* ]]; then
             mv "$MK" "twrp_${CODENAME}.mk"
             MK="twrp_${CODENAME}.mk"
@@ -172,11 +169,11 @@ jobs:
           BC_FILE="$TREE_PATH/BoardConfig.mk"
           MK_FILE="$TREE_PATH/${{ steps.normalize.outputs.makefile_name }}.mk"
           
-          # [디버깅 1] twrpdtgen 스크립트가 잘못 자동주입한 퀄컴(ttyMSM0 등) 부트아규먼트 및 타겟 보드 초기화
+          # 자동 파서가 기입한 퀄컴(Snapdragon) 장치 매개변수 전면 소거
           sed -i '/BOARD_KERNEL_CMDLINE/d' "$BC_FILE"
           sed -i '/TARGET_BOOTLOADER_BOARD_NAME/d' "$BC_FILE"
           
-          # [디버깅 2] 실측 데이터 및 Exynos 7870 그래픽 하드웨어 강제 고정 주입 (백라이트 흑화 해결)
+          # 실측 데이터 및 Exynos 7870 그래픽 하드웨어 강제 고정 주입 (백라이트 블랙스크린 해결)
           cat >> "$BC_FILE" << 'EOT'
 
           # ---- SM-T583 Real Hardware Override Specifications ----
@@ -184,16 +181,16 @@ jobs:
           TARGET_BOOTLOADER_BOARD_NAME := universal7870
           BOARD_KERNEL_CMDLINE := androidboot.hardware=gtaxladwifikx androidboot.selinux=permissive
 
-          # 실측 리커버리 파티션 바이트 규격 매핑 (39845888 bytes)
+          # 실측 리커버리 파티션 용량 강제 매핑 (39845888 bytes)
           BOARD_RECOVERYIMAGE_PARTITION_SIZE := 39845888
           
-          # 실측 디스플레이 및 32bpp 프레임버퍼 리눅스 FB 렌더링 강제화
+          # 실측 디스플레이 세팅 및 32bpp 프레임버퍼 리눅스 FB 가속 강제화
           BOARD_RECOVERY_SCREEN_WIDTH := 1200
           BOARD_RECOVERY_SCREEN_HEIGHT := 1920
           TARGET_RECOVERY_PIXEL_FORMAT := "BGRA_8888"
           RECOVERY_GRAPHICS_USE_LINUX_FB := true
 
-          # 실측 시스템 패널 백라이트 제어 경로 및 한계값 동기화
+          # 실측 시스템 패널 백라이트 디바이스 패스 지정 (최대치 306 동기화)
           TW_THEME := portrait_hdpi
           TW_SCREEN_BLANK_ON_BOOT := true
           TW_BRIGHTNESS_PATH := "/sys/class/backlight/panel/brightness"
@@ -202,7 +199,7 @@ jobs:
           BOARD_HAS_MTK_HARDWARE := false
           EOT
           
-          # [디버깅 3] twrp-12.1 빌드 엔진 추적용 기기 코드명 연쇄 세탁 (twrp_gtaxladwifikx 규격화)
+          # twrp-12.1 빌드 엔진용 디바이스 식별 정보 세탁 (twrp_gtaxladwifikx 연쇄 동기화)
           if [ -f "$MK_FILE" ]; then
             sed -i 's/PRODUCT_RELEASE_NAME := .*/PRODUCT_RELEASE_NAME := gtaxladwifikx/g' "$MK_FILE"
             sed -i 's/PRODUCT_DEVICE := .*/PRODUCT_DEVICE := gtaxladwifikx/g' "$MK_FILE"
@@ -249,7 +246,7 @@ jobs:
           source build/envsetup.sh
           export ALLOW_MISSING_DEPENDENCIES=true
           export LC_ALL=C
-          # twrp-12.1 빌더 규격에 의거하여 twrp_ 타겟으로 lunch 진입 및 mka 패키징 실행
+          # twrp_ 타겟으로 정식 lunch 진입 및 mka 패키징 실행
           lunch twrp_gtaxladwifikx-eng
           make clean
           mka recoveryimage -j$(nproc)
