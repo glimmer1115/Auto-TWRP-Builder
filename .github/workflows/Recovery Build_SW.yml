@@ -79,7 +79,7 @@ jobs:
           git config --global user.name "azwhikaru"
           git config --global user.email "azwhikaru+37921907@github.com"
           
-          repo init --depth=1 --no-repo-verify -u ${{ github.event.inputs.MANIFEST_URL }} -b ${{ github.event.inputs.MANIFEST_BRANCH }}
+          repo init --depth=1 --no-repo-verify -u ${{ github.event.inputs.MANIFEST_URL }} -b${{ github.event.inputs.MANIFEST_BRANCH }}
 
       - name: Check Build Tree
         uses: haya14busa/action-cond@v1
@@ -161,8 +161,8 @@ jobs:
 
           echo "codename=${CODENAME}" >> $GITHUB_OUTPUT
           echo "tree=${TREE}" >> $GITHUB_OUTPUT
-          echo "makefile_name=${MK%.mk}" >> $GITHUB_OUTPUT
-          echo "Codename: $CODENAME / Makefile: ${MK%.mk}"
+          echo "makefile_name=${MK\%.mk}" >> $GITHUB_OUTPUT
+          echo "Codename: $CODENAME / Makefile:${MK%.mk}"
 
       - name: Apply SM-T583 Real Hardware Spec
         working-directory: ${{ steps.pwd.outputs.workspace-folder }}
@@ -213,40 +213,3 @@ jobs:
           cd "${{ steps.normalize.outputs.tree }}"
           ls -l
           echo "== BoardConfig.mk =="
-          cat BoardConfig.mk
-          echo "== Product MakeFile == "
-          cat ${{ steps.normalize.outputs.makefile_name }}.mk
-          echo "== fstab =="
-          find . -name "*.fstab" -exec sh -c 'echo "--- $1"; cat "$1"' _ {} \;
-
-      - name: Sync Device Dependencies
-        run: |
-          if [ -f "${{ steps.normalize.outputs.tree }}/${{ steps.buildtree.outputs.value }}.dependencies" ]; then
-            bash ${GITHUB_WORKSPACE}/scripts/convert.sh ${{ steps.normalize.outputs.tree }}/${{ steps.buildtree.outputs.value }}.dependencies
-            repo sync -j4
-          else
-            echo "Dependencies file not found, skipping..."
-          fi
-        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-
-      - name: Set Swap Space
-        uses: pierotofy/set-swap-space@master
-        with:
-          swap-size-gb: 12
-
-      - name: Building recovery
-        run: |
-          source build/envsetup.sh
-          export ALLOW_MISSING_DEPENDENCIES=true
-          export LC_ALL=C
-          lunch twrp_gtaxladwifikx-eng
-          make clean
-          mka recoveryimage -j$(nproc)
-        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: TWRP-SM-T583-Build
-          path: |
-            workspace/out/target/product/gtaxladwifikx/recovery.img
