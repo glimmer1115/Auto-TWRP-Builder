@@ -54,4 +54,153 @@ jobs:
           distribution: 'zulu'
           java-version: '8'
 
-      - name: S
+      - name: Install repo
+        run: |
+          mkdir -p ~/bin
+          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+          chmod a+x ~/bin/repo
+          sudo ln -sf ~/bin/repo /usr/bin/repo
+
+      - name: Initialize repo
+        id: pwd
+        run: |
+          mkdir workspace
+          cd workspace
+          echo "workspace-folder=$(pwd)" >> $GITHUB_OUTPUT
+          git config --global user.name "azwhikaru"
+          git config --global user.email "azwhikaru+37921907@github.com"
+          repo init --depth=1 --no-repo-verify -u "${{ github.event.inputs.MANIFEST_URL }}" -b "${{ github.event.inputs.MANIFEST_BRANCH }}"
+
+      - name: Repo Sync
+        working-directory: workspace
+        run: |
+          ok=0
+          for i in 1 2 3; do
+            if repo sync -j4 --force-sync --no-clone-bundle --current-branch; then
+              ok=1
+              break
+            fi
+            echo "Repo sync failed, retrying..."
+            sleep 5
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::repo sync failed 3 times"
+            exit 1
+          fi
+
+      - name: Get recovery image
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        env:
+          IMG_URL: ${{ github.event.inputs.IMG_URL }}
+        run: |
+          if [ -n "$IMG_URL" ]; then
+            echo "Downloading $IMG_URL"
+            wget -O recovery.img "$IMG_URL"
+          else
+            echo "Using recovery.img from repository root"
+            if [ ! -f "${GITHUB_WORKSPACE}/recovery.img" ]; then
+              echo "::error::recovery.img not found in repo root"
+              exit 1
+            fi
+            cp "${GITHUB_WORKSPACE}/recovery.img" recovery.img
+          fi
+          ls -l recovery.img
+          file recovery.img
+          sha256sum recovery.img
+          if [ "$(head -c 8 recovery.img)" != "ANDROID!" ]; then
+            echo "::error::recovery.img is not an Android boot image (HTML page or wrong file?)"
+            head -c 300 recovery.img
+            exit 1
+          fi
+
+      - name: Generate Device Tree
+        id: gdt
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        run: |
+          python3 ${GITHUB_WORKSPACE}/scripts/build.py -i recovery.img -o device
+
+      - name: Normalize Device Tree
+        id: normalize
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        run: |
+          set -e
+          TREE="${{ steps.gdt.outputs.DEVICE_PATH }}"
+          if [ -z "$TREE" ] || [ ! -d "$TREE" ]; then
+            TREE=$(ls -d device/*/* 2>/dev/null | head -1)
+          fi
+          echo "Generated tree path: $TREE"
+          if [ -z "$TREE" ] || [ ! -d "$TREE" ]; then
+            echo "::error::Generated device tree path not found!"
+            exit 1
+          fi
+          CODENAME=$(basename "$TREE")
+
+          cd "$TREE"
+          MK=""
+          for f in omni_*.mk twrp_*.mk; do
+            if [ -f "$f" ]; then
+              MK="$f"
+              break
+            fi
+          done
+          if [ -z "$MK" ]; then
+            echo "::error::No omni_/twrp_ makefile found in $TREE"
+            ls -l
+            exit 1
+          fi
+          if [[ "$MK" == omni_* ]]; then
+            mv "$MK" "twrp_${CODENAME}.mk"
+            MK="twrp_${CODENAME}.mk"
+          fi
+
+          # omni -> twrp naming for twrp-11 tree
+          sed -i 's/omni_/twrp_/g' AndroidProducts.mk "$MK"
+          sed -i 's#vendor/omni/config/common.mk#vendor/twrp/config/common.mk#g' "$MK"
+
+          rm -f Android.bp
+
+          # Optional overrides: repo file overrides/BoardConfig.mk is appended via include
+          if [ -f "${GITHUB_WORKSPACE}/overrides/BoardConfig.mk" ]; then
+            cp "${GITHUB_WORKSPACE}/overrides/BoardConfig.mk" BoardConfigOverride.mk
+            echo "" >> BoardConfig.mk
+            echo '-include $(DEVICE_PATH)/BoardConfigOverride.mk' >> BoardConfig.mk
+            echo "Applied overrides/BoardConfig.mk"
+          fi
+
+          echo "---- BoardConfig.mk ----"
+          cat BoardConfig.mk
+          cd - > /dev/null
+
+          echo "codename=${CODENAME}" >> $GITHUB_OUTPUT
+          echo "tree=${TREE}" >> $GITHUB_OUTPUT
+
+      - name: Build recovery
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        run: |
+          set -e
+          export ALLOW_MISSING_DEPENDENCIES=true
+          export LC_ALL=C
+          source build/envsetup.sh
+          lunch twrp_${{ steps.normalize.outputs.codename }}-eng
+          mka ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc)
+
+      - name: Package for Odin
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        run: |
+          set -e
+          OUT="out/target/product/${{ steps.normalize.outputs.codename }}"
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+          cp "$OUT/recovery.img" "$GITHUB_WORKSPACE/artifacts/recovery.img"
+          cd "$GITHUB_WORKSPACE/artifacts"
+          echo -n "SEANDROIDENFORCE" >> recovery.img
+          tar -H ustar -c recovery.img > TWRP-recovery.tar
+          ls -l
+          sha256sum recovery.img TWRP-recovery.tar
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: twrp-${{ steps.normalize.outputs.codename }}
+          path: |
+            artifacts/recovery.img
+            artifacts/TWRP-recovery.tar
