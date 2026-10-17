@@ -1,12 +1,12 @@
 - name: Build recovery
-        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-        run: |
-          set -e
-          export ALLOW_MISSING_DEPENDENCIES=true
-          export LC_ALL=C
-          source build/envsetup.sh
-          lunch twrp_${{ steps.normalize.outputs.codename }}-eng
-          mka BOARD_USES_RECOVERY_AS_BOOT=false ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc)      MANIFEST_URL:
+  working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+  run: |
+    set -e
+    export ALLOW_MISSING_DEPENDENCIES=true
+    export LC_ALL=C
+    source build/envsetup.sh
+    lunch twrp_${{ steps.normalize.outputs.codename }}-eng
+    mka BOARD_USES_RECOVERY_AS_BOOT=false ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc)      MANIFEST_URL:
         description: 'MANIFEST_URL'
         required: true
         default: 'https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp'
