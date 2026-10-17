@@ -124,6 +124,7 @@ jobs:
         working-directory: ${{ steps.pwd.outputs.workspace-folder }}
         run: |
           set -e
+          IMG="$(pwd)/recovery.img"
           TREE="${{ steps.gdt.outputs.DEVICE_PATH }}"
           if [ -z "$TREE" ] || [ ! -d "$TREE" ]; then
             TREE=$(ls -d device/*/* 2>/dev/null | head -1)
@@ -159,16 +160,34 @@ jobs:
 
           rm -f Android.bp
 
-          # Optional overrides: repo file overrides/BoardConfig.mk is appended via include
+          # Extract kernel + dtb from the stock recovery image
+          mkdir -p prebuilt recovery/root
+          python3 - "$IMG" <<'PY'
+          import struct,sys
+          d=open(sys.argv[1],'rb').read()
+          ks,_,rs,_,ss,_,_,pg,dts=struct.unpack('<9I',d[8:44])
+          up=lambda n:(n+pg-1)//pg*pg
+          open('prebuilt/Image','wb').write(d[pg:pg+ks])
+          o=pg+up(ks)+up(rs)+up(ss)
+          open('prebuilt/dt.img','wb').write(d[o:o+dts])
+          PY
+          ls -l prebuilt
+
+          # Overrides from repo
           if [ -f "${GITHUB_WORKSPACE}/overrides/BoardConfig.mk" ]; then
             cp "${GITHUB_WORKSPACE}/overrides/BoardConfig.mk" BoardConfigOverride.mk
-            echo "" >> BoardConfig.mk
-            echo '-include $(DEVICE_PATH)/BoardConfigOverride.mk' >> BoardConfig.mk
+            { echo ""; echo "DEVICE_PATH := ${TREE}"; echo "-include ${TREE}/BoardConfigOverride.mk"; } >> BoardConfig.mk
             echo "Applied overrides/BoardConfig.mk"
+          fi
+          if [ -f "${GITHUB_WORKSPACE}/overrides/init.recovery.samsungexynos7870.rc" ]; then
+            cp "${GITHUB_WORKSPACE}/overrides/init.recovery.samsungexynos7870.rc" recovery/root/
+            echo "Applied init.recovery rc"
           fi
 
           echo "---- BoardConfig.mk ----"
           cat BoardConfig.mk
+          echo "---- recovery/root ----"
+          ls -l recovery/root
           cd - > /dev/null
 
           echo "codename=${CODENAME}" >> $GITHUB_OUTPUT
