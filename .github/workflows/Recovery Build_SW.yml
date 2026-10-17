@@ -49,7 +49,7 @@ jobs:
           pip3 install --break-system-packages twrpdtgen || pip3 install twrpdtgen
 
       - name: Install OpenJDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
           java-version: '8'
