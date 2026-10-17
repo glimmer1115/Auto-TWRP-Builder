@@ -1,12 +1,13 @@
-- name: Build recovery
-  working-directory: ${{ steps.pwd.outputs.workspace-folder }}
-  run: |
-    set -e
-    export ALLOW_MISSING_DEPENDENCIES=true
-    export LC_ALL=C
-    source build/envsetup.sh
-    lunch twrp_${{ steps.normalize.outputs.codename }}-eng
-    mka BOARD_USES_RECOVERY_AS_BOOT=false ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc)      MANIFEST_URL:
+name: "Recovery Build (SM-T583 Final)"
+
+on:
+  workflow_dispatch:
+    inputs:
+      IMG_URL:
+        description: 'IMG_URL (optional). Leave EMPTY to use recovery.img committed in the repo root'
+        required: false
+        default: ''
+      MANIFEST_URL:
         description: 'MANIFEST_URL'
         required: true
         default: 'https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp'
@@ -197,7 +198,7 @@ jobs:
           export LC_ALL=C
           source build/envsetup.sh
           lunch twrp_${{ steps.normalize.outputs.codename }}-eng
-          mka ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc)
+          mka BOARD_USES_RECOVERY_AS_BOOT=false ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc)
 
       - name: Package for Odin
         working-directory: ${{ steps.pwd.outputs.workspace-folder }}
