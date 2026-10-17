@@ -160,16 +160,13 @@ jobs:
 
           rm -f Android.bp
 
-          # Extract kernel + dtb from the stock recovery image
+          # Extract stock kernel
           mkdir -p prebuilt recovery/root
           python3 - "$IMG" <<'PY'
           import struct,sys
           d=open(sys.argv[1],'rb').read()
-          ks,_,rs,_,ss,_,_,pg,dts=struct.unpack('<9I',d[8:44])
-          up=lambda n:(n+pg-1)//pg*pg
+          ks,_,rs,_,ss,_,_,pg=struct.unpack('<8I',d[8:40])
           open('prebuilt/Image','wb').write(d[pg:pg+ks])
-          o=pg+up(ks)+up(rs)+up(ss)
-          open('prebuilt/dt.img','wb').write(d[o:o+dts])
           PY
           ls -l prebuilt
 
@@ -209,7 +206,38 @@ jobs:
           set -e
           OUT="out/target/product/${{ steps.normalize.outputs.codename }}"
           mkdir -p "$GITHUB_WORKSPACE/artifacts"
-          cp "$OUT/recovery.img" "$GITHUB_WORKSPACE/artifacts/recovery.img"
+          cp "$OUT/recovery.img" built_recovery.img
+          python3 - recovery.img built_recovery.img "$GITHUB_WORKSPACE/artifacts/recovery.img" <<'PY'
+          import struct,sys,hashlib
+          def parse(d):
+              ks,ka,rs,ra,ss,sa,ta,pg,dts=struct.unpack('<9I',d[8:44])
+              up=lambda n:(n+pg-1)//pg*pg
+              o1=pg; o2=o1+up(ks); o3=o2+up(rs); o4=o3+up(ss)
+              return dict(ka=ka,ra=ra,sa=sa,pg=pg,k=d[o1:o1+ks],r=d[o2:o2+rs],dt=d[o4:o4+dts])
+          stock=open(sys.argv[1],'rb').read()
+          built=open(sys.argv[2],'rb').read()
+          st=parse(stock); b=parse(built)
+          pg=st['pg']
+          kernel=st['k']; ramdisk=b['r']; dt=st['dt']
+          print('kernel',len(kernel),'ramdisk',len(ramdisk),'dt',len(dt))
+          hdr=bytearray(stock[:pg])
+          struct.pack_into('<II',hdr,8,len(kernel),st['ka'])
+          struct.pack_into('<II',hdr,16,len(ramdisk),st['ra'])
+          struct.pack_into('<II',hdr,24,0,st['sa'])
+          struct.pack_into('<I',hdr,40,len(dt))
+          h=hashlib.sha1()
+          for blob in (kernel,ramdisk,b''):
+              h.update(blob); h.update(struct.pack('<I',len(blob)))
+          if dt:
+              h.update(dt); h.update(struct.pack('<I',len(dt)))
+          hdr[576:608]=h.digest()+b'\0'*12
+          up=lambda n:(n+pg-1)//pg*pg
+          pad=lambda x:x+b'\0'*(up(len(x))-len(x))
+          out=bytes(hdr)+pad(kernel)+pad(ramdisk)+pad(dt)
+          assert len(out)<=39845888,'image too large: %d'%len(out)
+          open(sys.argv[3],'wb').write(out)
+          print('final size',len(out))
+          PY
           cd "$GITHUB_WORKSPACE/artifacts"
           echo -n "SEANDROIDENFORCE" >> recovery.img
           tar -H ustar -c recovery.img > TWRP-recovery.tar
