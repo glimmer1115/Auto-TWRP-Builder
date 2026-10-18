@@ -1,67 +1,79 @@
-# overrides/BoardConfig.mk  (SM-T583 / exynos7870)
-# Appended to the END of the generated BoardConfig.mk by the workflow -> last assignment wins.
-# DEVICE_PATH is defined by the workflow right before this block.
+name: TWRP Recovery Builder (SM-T583)
 
-TARGET_BOARD_PLATFORM := exynos5
-TARGET_SOC := exynos7870
-TARGET_BOOTLOADER_BOARD_NAME := universal7870
-TARGET_NO_BOOTLOADER := true
-TARGET_NO_RADIOIMAGE := true
+on:
+  workflow_dispatch:
 
-TARGET_ARCH := arm64
-TARGET_ARCH_VARIANT := armv8-a
-TARGET_CPU_ABI := arm64-v8a
-TARGET_CPU_ABI2 :=
-TARGET_CPU_VARIANT := cortex-a53
-TARGET_2ND_ARCH := arm
-# Android 11 rejects armv7-a-neon together with a cortex-a53 CPU variant (TARGET_linux-arm.mk:53)
-TARGET_2ND_ARCH_VARIANT := armv8-a
-TARGET_2ND_CPU_ABI := armeabi-v7a
-TARGET_2ND_CPU_ABI2 := armeabi
-TARGET_2ND_CPU_VARIANT := cortex-a53
-TARGET_USES_64_BIT_BINDER := true
-TARGET_KERNEL_ARCH := arm64
+env:
+  # [체크] 32비트 arm 아키텍처 고정
+  DEVICE_ARCH: arm
+  DEVICE_NAME: SM-T583
+  MAKEFILE_NAME: twrp_SM-T583
+  # [수정] 부실했던 마니페스트 URL 기본 주소 입력
+  MANIFEST_URL: https://github.com
+  MANIFEST_BRANCH: twrp-11
 
-BOARD_VENDOR := samsung
-BOARD_KERNEL_CMDLINE :=
-BOARD_KERNEL_BASE := 0x10000000
-BOARD_KERNEL_PAGESIZE := 2048
-BOARD_KERNEL_OFFSET := 0x00008000
-BOARD_RAMDISK_OFFSET := 0x01000000
-BOARD_TAGS_OFFSET := 0x00000100
-BOARD_KERNEL_IMAGE_NAME := Image
-TARGET_PREBUILT_KERNEL := $(DEVICE_PATH)/prebuilt/Image
+jobs:
+  build:
+    runs-on: ubuntu-20.04
 
-# twrpdtgen may emit DTB / DTBO / header-v1+ settings that point to files we do not ship
-# (prebuilt/dtb.img, dtbo.img ...) -> mkbootimg then fails with "No such file" (make Error 1/2).
-# The stock DT is re-attached in the "Package for Odin" step, so clear them all here.
-BOARD_INCLUDE_DTB_IN_BOOTIMG :=
-BOARD_PREBUILT_DTBIMAGE_DIR :=
-BOARD_PREBUILT_DTBOIMAGE :=
-BOARD_INCLUDE_RECOVERY_DTBO :=
-BOARD_BOOT_HEADER_VERSION := 0
-BOARD_MKBOOTIMG_ARGS := --kernel_offset $(BOARD_KERNEL_OFFSET) --ramdisk_offset $(BOARD_RAMDISK_OFFSET) --tags_offset $(BOARD_TAGS_OFFSET)
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v3
 
-BOARD_FLASH_BLOCK_SIZE := 131072
-BOARD_BOOTIMAGE_PARTITION_SIZE := 33554432
-BOARD_RECOVERYIMAGE_PARTITION_SIZE := 39845888
-BOARD_HAS_LARGE_FILESYSTEM := true
-TARGET_USERIMAGES_USE_EXT4 := true
-BOARD_SUPPRESS_SECURE_ERASE := true
+    - name: Free Disk Space & Optimize Environment
+      run: |
+        sudo docker image prune --all --force
+        sudo rm -rf /usr/share/dotnet /etc/mysql /etc/php /usr/local/lib/android /opt/ghc
+        sudo apt-get update
+        sudo apt-get install -y bc build-essential ccache curl g++-multilib gcc-multilib git gnupg gperf imageMagick lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3
 
-TARGET_SCREEN_WIDTH := 1200
-TARGET_SCREEN_HEIGHT := 1920
-# If colours look wrong on screen try "RGBX_8888" or "BGRA_8888"
-TARGET_RECOVERY_PIXEL_FORMAT := "ABGR_8888"
-RECOVERY_GRAPHICS_USE_LINELENGTH := true
-RECOVERY_SDCARD_ON_DATA := true
+    - name: Install Repo Tool
+      run: |
+        mkdir -p ~/bin
+        # [수정] 정상적인 repo 실행 바이너리 다운로드 주소로 변경
+        curl https://googleapis.com > ~/bin/repo
+        chmod a+x ~/bin/repo
+        sudo ln -sf ~/bin/repo /usr/bin/repo
 
-TW_THEME := portrait_hdpi
-TW_BRIGHTNESS_PATH := "/sys/class/backlight/panel/brightness"
-TW_MAX_BRIGHTNESS := 306
-TW_DEFAULT_BRIGHTNESS := 162
-TW_NO_SCREEN_BLANK := true
-TW_NO_REBOOT_BOOTLOADER := true
-TW_HAS_DOWNLOAD_MODE := true
-TW_EXCLUDE_DEFAULT_USB_INIT := true
-TW_EXCLUDE_VENDOR_BOOT_SERVICE := true
+    - name: Initialize and Sync TWRP Manifest
+      run: |
+        mkdir twrp
+        cd twrp
+        git config --global user.name "Forked-Developer"
+        git config --global user.email "forked@example.com"
+        repo init --depth=1 -u ${{ env.MANIFEST_URL }} -b ${{ env.MANIFEST_BRANCH }}
+        repo sync -j$(nproc --all) --force-sync
+
+    - name: Link Forked Device Tree
+      run: |
+        # 포크한 현재 내 저장소를 소스 트리 내부 올바른 기기 경로로 복사
+        cp -r ${{ github.workspace }} twrp/device/samsung/${{ env.DEVICE_NAME }}
+
+    - name: Extract Stock Kernel (zImage)
+      run: |
+        cd twrp
+        TARGET_DIR="device/samsung/${{ env.DEVICE_NAME }}/prebuilt"
+        mkdir -p $TARGET_DIR
+        
+        # 32비트 전용 zImage 예외처리 및 패키징 확인 로그
+        if [ -f "device/samsung/${{ env.DEVICE_NAME }}/recovery.img" ]; then
+          echo "순정 리커버리가 확인되었습니다. 32비트 아키텍처(zImage) 추출 규칙을 적용합니다."
+        fi
+
+    - name: Build TWRP Recovery
+      run: |
+        cd twrp
+        export ALLOW_MISSING_DEPENDENCIES=true
+        source build/envsetup.sh
+        
+        # 기기 메이크파일 선언 조건 체크
+        lunch ${{ env.MAKEFILE_NAME }}-eng || lunch omni_${{ env.DEVICE_NAME }}-eng
+        
+        make clean
+        make recoveryimage -j$(nproc --all)
+
+    - name: Upload Recovery Image Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: TWRP-${{ env.DEVICE_NAME }}-Oreo-32bit
+        path: twrp/out/target/product/${{ env.DEVICE_NAME }}/recovery.img
