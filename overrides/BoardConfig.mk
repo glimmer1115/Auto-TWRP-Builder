@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
 
 env:
-  # [체크] 32비트 arm 아키텍처 고정
+
   DEVICE_ARCH: arm
   DEVICE_NAME: SM-T583
   MAKEFILE_NAME: twrp_SM-T583
-  # [수정] 부실했던 마니페스트 URL 기본 주소 입력
-  MANIFEST_URL: https://github.com
+
+  MANIFEST_URL: https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git
   MANIFEST_BRANCH: twrp-11
 
 jobs:
