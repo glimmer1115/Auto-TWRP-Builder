@@ -1,0 +1,355 @@
+name: "Recovery Build (SM-T583 Final)"
+
+on:
+  workflow_dispatch:
+    inputs:
+      IMG_URL:
+        description: 'IMG_URL (optional). Leave EMPTY to use recovery.img committed in the repo root'
+        required: false
+        default: ''
+      MANIFEST_URL:
+        description: 'MANIFEST_URL'
+        required: true
+        default: 'https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp'
+      MANIFEST_BRANCH:
+        description: 'MANIFEST_BRANCH'
+        required: true
+        default: 'twrp-11'
+      BUILD_TARGET:
+        description: 'BUILD_TARGET'
+        required: true
+        default: 'recovery'
+
+concurrency:
+  group: recovery-build-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.event.repository.owner.id == github.event.sender.id
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+    env:
+      # inputs are passed through env (never expanded inside run:) -> no shell injection
+      IMG_URL: ${{ inputs.IMG_URL }}
+      MANIFEST_URL: ${{ inputs.MANIFEST_URL }}
+      MANIFEST_BRANCH: ${{ inputs.MANIFEST_BRANCH }}
+      BUILD_TARGET: ${{ inputs.BUILD_TARGET }}
+      WS: ${{ github.workspace }}/workspace
+    steps:
+      - name: Display Run Parameters
+        run: |
+          echo "::group::User Environment Variables"
+          echo "Image URL: ${IMG_URL:-<repo root recovery.img>}"
+          echo "Manifest URL: $MANIFEST_URL"
+          echo "Manifest Branch: $MANIFEST_BRANCH"
+          echo "Build Target: ${BUILD_TARGET}image"
+          echo "::endgroup::"
+
+      - name: Check Out
+        uses: actions/checkout@v4
+
+      # Replaces the unpinned third-party slimhub_actions@main (supply-chain risk, and a
+      # frequent source of random failures). A TWRP tree needs ~40 GB, not 100+ GB.
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
+          df -h /
+
+      - name: Prepare the environment
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install \
+            gperf gcc-multilib g++-multilib libc6-dev lib32ncurses-dev x11proto-core-dev \
+            libx11-dev tree lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc bc ccache \
+            lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libxml2 \
+            lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp \
+            qemu-user-static libncurses5 python3 python3-pip python-is-python3 cpio wget file \
+            unzip zip git curl
+          # Ubuntu 22.04 pip does not know --break-system-packages, so use --user
+          python3 -m pip install --user -U twrpdtgen
+
+      # Android 11 builds use the JDK inside prebuilts/, host JDK is only a fallback.
+      - name: Install OpenJDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '11'
+
+      - name: Install repo
+        run: |
+          sudo curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
+          sudo chmod a+x /usr/local/bin/repo
+          repo --version || true
+
+      - name: Initialize repo
+        run: |
+          mkdir -p "$WS"
+          cd "$WS"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global color.ui false
+          repo init --depth=1 --no-repo-verify -u "$MANIFEST_URL" -b "$MANIFEST_BRANCH"
+
+      - name: Repo Sync
+        working-directory: ${{ env.WS }}
+        run: |
+          ok=0
+          for i in 1 2 3; do
+            # first try is parallel, retries are gentle (less likely to hit rate limits)
+            if [ "$i" = "1" ]; then J=$(nproc --all); else J=2; fi
+            if repo sync -j"$J" --force-sync --no-clone-bundle --no-tags -c --optimized-fetch; then
+              ok=1
+              break
+            fi
+            echo "Repo sync failed (attempt $i), retrying..."
+            sleep 10
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::repo sync failed 3 times"
+            exit 1
+          fi
+
+      - name: Get recovery image
+        working-directory: ${{ env.WS }}
+        run: |
+          if [ -n "$IMG_URL" ]; then
+            echo "Downloading $IMG_URL"
+            wget --tries=3 -O recovery.img "$IMG_URL"
+          else
+            echo "Using recovery.img from repository root"
+            if [ ! -f "${GITHUB_WORKSPACE}/recovery.img" ]; then
+              echo "::error::recovery.img not found in repo root"
+              exit 1
+            fi
+            cp "${GITHUB_WORKSPACE}/recovery.img" recovery.img
+          fi
+          ls -l recovery.img
+          file recovery.img
+          sha256sum recovery.img
+          if [ "$(head -c 8 recovery.img)" != "ANDROID!" ]; then
+            echo "::error::recovery.img is not an Android boot image (HTML page or wrong file?)"
+            head -c 300 recovery.img
+            exit 1
+          fi
+
+      - name: Generate Device Tree
+        id: gdt
+        working-directory: ${{ env.WS }}
+        run: |
+          if [ -f "${GITHUB_WORKSPACE}/scripts/build.py" ]; then
+            python3 "${GITHUB_WORKSPACE}/scripts/build.py" -i recovery.img -o device
+          else
+            echo "scripts/build.py not found -> using twrpdtgen directly"
+            python3 -m twrpdtgen recovery.img -o device
+          fi
+
+      - name: Normalize Device Tree
+        id: normalize
+        working-directory: ${{ env.WS }}
+        env:
+          DEVICE_PATH_OUT: ${{ steps.gdt.outputs.DEVICE_PATH }}
+        run: |
+          set -e
+          IMG="$(pwd)/recovery.img"
+          TREE="$DEVICE_PATH_OUT"
+
+          if [ -f "bootable/recovery/prebuilt/relink.sh" ]; then
+            printf '#!/bin/sh\n' > bootable/recovery/prebuilt/relink.sh
+            chmod +x bootable/recovery/prebuilt/relink.sh
+            echo "Neutralized relink.sh"
+          fi
+
+          # 1) path reported by build.py  2) newest generated tree (AndroidProducts.mk newer than the image)
+          if [ -z "$TREE" ] || [ ! -d "$TREE" ]; then
+            TREE=$(find device -name AndroidProducts.mk -newer recovery.img -printf '%h\n' 2>/dev/null | head -1)
+          fi
+          if [ -z "$TREE" ] || [ ! -d "$TREE" ]; then
+            echo "::error::Generated device tree path not found!"
+            ls -R device | head -50 || true
+            exit 1
+          fi
+          # make it relative to the AOSP root (DEVICE_PATH must be relative)
+          TREE=$(realpath --relative-to="$(pwd)" "$TREE")
+          echo "Generated tree path: $TREE"
+          CODENAME=$(basename "$TREE")
+
+          cd "$TREE"
+          MK=""
+          for f in omni_*.mk twrp_*.mk; do
+            if [ -f "$f" ]; then
+              MK="$f"
+              break
+            fi
+          done
+          if [ -z "$MK" ]; then
+            echo "::error::No omni_/twrp_ makefile found in $TREE"
+            ls -l
+            exit 1
+          fi
+          if [[ "$MK" == omni_* ]]; then
+            mv "$MK" "twrp_${CODENAME}.mk"
+            MK="twrp_${CODENAME}.mk"
+          fi
+
+          # omni -> twrp naming for twrp-11 tree
+          sed -i 's/omni_/twrp_/g' AndroidProducts.mk "$MK"
+          sed -i 's#vendor/omni/config/common.mk#vendor/twrp/config/common.mk#g' "$MK"
+          grep -Eq "PRODUCT_NAME *:= *twrp_${CODENAME}" "$MK" \
+            || echo "::warning::PRODUCT_NAME in $MK is not twrp_${CODENAME}; lunch may fail"
+
+          rm -f Android.bp
+
+          # Extract stock kernel (raw arm64 Image) from the stock recovery.img
+          mkdir -p prebuilt recovery/root
+          python3 - "$IMG" <<'PY'
+          import struct, sys
+          d = open(sys.argv[1], 'rb').read()
+          ks, _, rs, _, ss, _, _, pg = struct.unpack('<8I', d[8:40])
+          assert ks > 0, 'kernel size is 0 - not a v0 Samsung boot image?'
+          open('prebuilt/Image', 'wb').write(d[pg:pg + ks])
+          print('kernel size', ks, 'pagesize', pg)
+          PY
+          ls -l prebuilt
+
+          # Overrides from repo. APPENDED (not -include with a wildcard) so Soong/kati always sees them,
+          # and last assignment wins over whatever twrpdtgen generated.
+          if [ -f "${GITHUB_WORKSPACE}/overrides/BoardConfig.mk" ]; then
+            {
+              echo ""
+              echo "# ---- appended by workflow: overrides/BoardConfig.mk ----"
+              echo "DEVICE_PATH := ${TREE}"
+              cat "${GITHUB_WORKSPACE}/overrides/BoardConfig.mk"
+            } >> BoardConfig.mk
+            echo "Applied overrides/BoardConfig.mk"
+          fi
+          if [ -f "${GITHUB_WORKSPACE}/overrides/init.recovery.samsungexynos7870.rc" ]; then
+            cp "${GITHUB_WORKSPACE}/overrides/init.recovery.samsungexynos7870.rc" recovery/root/
+            echo "Applied init.recovery rc"
+          fi
+
+          echo "---- BoardConfig.mk ----"
+          cat BoardConfig.mk
+          echo "---- recovery/root ----"
+          ls -l recovery/root
+          echo "---- arch hints from stock ramdisk props ----"
+          grep -rh "ro.product.cpu.abi" recovery/root 2>/dev/null | head -5 || true
+          cd - > /dev/null
+
+          echo "codename=${CODENAME}" >> "$GITHUB_OUTPUT"
+          echo "tree=${TREE}" >> "$GITHUB_OUTPUT"
+
+      - name: Build recovery
+        working-directory: ${{ env.WS }}
+        env:
+          CODENAME: ${{ steps.normalize.outputs.codename }}
+        run: |
+          # GitHub's default shell is `bash -e`. build/envsetup.sh and `lunch` contain commands that
+          # legitimately return non-zero (grep/test), so -e must be OFF while sourcing them.
+          set +e
+          export ALLOW_MISSING_DEPENDENCIES=true
+          export LC_ALL=C
+          source build/envsetup.sh
+          lunch "twrp_${CODENAME}-eng" || { echo "::error::lunch twrp_${CODENAME}-eng failed"; exit 1; }
+
+          set -o pipefail
+          mka BOARD_USES_RECOVERY_AS_BOOT=false "${BUILD_TARGET}image" -j"$(nproc)" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" != "0" ]; then
+            echo "::error::build failed with exit code $rc (see out/error.log / build.log artifact)"
+            [ -f out/error.log ] && tail -n 80 out/error.log
+            exit "$rc"
+          fi
+          if [ ! -f "out/target/product/${CODENAME}/recovery.img" ]; then
+            echo "::error::build finished but recovery.img was not produced"
+            ls -l "out/target/product/${CODENAME}" || true
+            exit 1
+          fi
+
+      - name: Package for Odin
+        working-directory: ${{ env.WS }}
+        env:
+          CODENAME: ${{ steps.normalize.outputs.codename }}
+        run: |
+          set -e
+          OUT="out/target/product/${CODENAME}"
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+          cp "$OUT/recovery.img" built_recovery.img
+          python3 - recovery.img built_recovery.img "$GITHUB_WORKSPACE/artifacts/recovery.img" <<'PY'
+          import struct, sys, hashlib
+
+          PART_SIZE = 39845888      # BOARD_RECOVERYIMAGE_PARTITION_SIZE
+          TRAILER = b'SEANDROIDENFORCE'
+
+          def parse(d):
+              assert d[:8] == b'ANDROID!', 'bad boot magic'
+              ks, ka, rs, ra, ss, sa, ta, pg, dts = struct.unpack('<9I', d[8:44])
+              up = lambda n: (n + pg - 1) // pg * pg
+              o1 = pg; o2 = o1 + up(ks); o3 = o2 + up(rs); o4 = o3 + up(ss)
+              return dict(ka=ka, ra=ra, sa=sa, pg=pg,
+                          k=d[o1:o1 + ks], r=d[o2:o2 + rs], dt=d[o4:o4 + dts])
+
+          stock = open(sys.argv[1], 'rb').read()
+          built = open(sys.argv[2], 'rb').read()
+          st = parse(stock); b = parse(built)
+          pg = st['pg']
+          # stock kernel + stock DT (Samsung bootloader is picky), TWRP ramdisk
+          kernel = st['k']; ramdisk = b['r']; dt = st['dt']
+          assert len(ramdisk) > 0, 'built ramdisk is empty'
+          print('kernel', len(kernel), 'ramdisk', len(ramdisk), 'dt', len(dt))
+
+          hdr = bytearray(stock[:pg])
+          struct.pack_into('<II', hdr, 8, len(kernel), st['ka'])
+          struct.pack_into('<II', hdr, 16, len(ramdisk), st['ra'])
+          struct.pack_into('<II', hdr, 24, 0, st['sa'])
+          struct.pack_into('<I', hdr, 40, len(dt))
+
+          h = hashlib.sha1()
+          for blob in (kernel, ramdisk, b''):
+              h.update(blob); h.update(struct.pack('<I', len(blob)))
+          if dt:
+              h.update(dt); h.update(struct.pack('<I', len(dt)))
+          hdr[576:608] = h.digest() + b'\0' * 12
+
+          up = lambda n: (n + pg - 1) // pg * pg
+          pad = lambda x: x + b'\0' * (up(len(x)) - len(x))
+          out = bytes(hdr) + pad(kernel) + pad(ramdisk) + pad(dt)
+          assert len(out) + len(TRAILER) <= PART_SIZE, 'image too large: %d' % (len(out) + len(TRAILER))
+          open(sys.argv[3], 'wb').write(out)
+          print('final size (before trailer)', len(out), '/', PART_SIZE)
+          PY
+          cd "$GITHUB_WORKSPACE/artifacts"
+          printf 'SEANDROIDENFORCE' >> recovery.img
+          tar -H ustar -c recovery.img > TWRP-recovery.tar
+          ls -l
+          sha256sum recovery.img TWRP-recovery.tar
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: twrp-${{ steps.normalize.outputs.codename }}
+          path: |
+            artifacts/recovery.img
+            artifacts/TWRP-recovery.tar
+          retention-days: 14
+          if-no-files-found: error
+
+      # Always uploaded, even when the build fails -> this is what tells us the real error
+      - name: Upload debug logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-${{ github.run_id }}
+          path: |
+            build.log
+            workspace/out/error.log
+            workspace/out/verbose.log.gz
+            workspace/device/
+          retention-days: 7
+          if-no-files-found: ignore
