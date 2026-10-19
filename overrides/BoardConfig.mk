@@ -42,6 +42,9 @@ BOARD_TAGS_OFFSET := 0x00000100
 # already accepts; the Odin step copies those same bytes back in).
 BOARD_KERNEL_IMAGE_NAME := zImage
 TARGET_PREBUILT_KERNEL := $(DEVICE_PATH)/prebuilt/zImage
+# Stock recovery ramdisk is gzip. twrp-11 emits LZ4, and this Oreo
+# bootloader stops with "invalid ramdisk" on anything else.
+BOARD_RAMDISK_USE_LZ4 := false
 
 # twrpdtgen may emit DTB / DTBO / header-v1+ settings that point to files we
 # do not ship. Stock DTBH is re-attached in the Odin packaging step.
@@ -69,7 +72,8 @@ TW_THEME := portrait_hdpi
 TW_BRIGHTNESS_PATH := "/sys/class/backlight/panel/brightness"
 TW_MAX_BRIGHTNESS := 306
 TW_DEFAULT_BRIGHTNESS := 162
-TW_NO_SCREEN_BLANK := true
+# Leave blanking enabled. true keeps the panel lit for the whole session.
+TW_NO_SCREEN_BLANK :=
 TW_NO_REBOOT_BOOTLOADER := true
 TW_HAS_DOWNLOAD_MODE := true
 TW_EXCLUDE_DEFAULT_USB_INIT := true

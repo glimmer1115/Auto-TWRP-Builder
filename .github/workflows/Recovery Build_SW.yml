@@ -54,7 +54,7 @@ jobs:
           echo "::endgroup::"
 
       - name: Check Out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Free disk space
         run: |
@@ -77,7 +77,7 @@ jobs:
           python3 -m pip install --user -U twrpdtgen
 
       - name: Install OpenJDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: 'zulu'
           java-version: '11'
@@ -312,10 +312,44 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/artifacts"
           cp "$OUT/recovery.img" built_recovery.img
           python3 - recovery.img built_recovery.img "$GITHUB_WORKSPACE/artifacts/recovery.img" <<'PY'
-          import struct, sys, hashlib
+          import gzip, hashlib, os, struct, subprocess, sys, tempfile
 
           PART_SIZE = 39845888
           TRAILER = b'SEANDROIDENFORCE'
+
+          def as_gzip_ramdisk(blob):
+              if blob[:2] == b'\x1f\x8b':
+                  raw = gzip.decompress(blob)
+                  print('built ramdisk was gzip')
+              elif blob[:6] in (b'070701', b'070702'):
+                  raw = blob
+                  print('built ramdisk was plain cpio')
+              else:
+                  print('built ramdisk magic', blob[:4].hex())
+                  raw = None
+                  td = tempfile.mkdtemp()
+                  src = os.path.join(td, 'rd.bin')
+                  dst = os.path.join(td, 'rd.cpio')
+                  with open(src, 'wb') as f:
+                      f.write(blob)
+                  for cmd in (
+                      ['lz4', '-d', '-f', src, dst],
+                      ['lz4', '-d', '-l', '-f', src, dst],
+                  ):
+                      try:
+                          subprocess.check_call(cmd)
+                      except Exception as exc:
+                          print('decode failed', cmd, exc)
+                          continue
+                      if os.path.isfile(dst) and os.path.getsize(dst) > 0:
+                          raw = open(dst, 'rb').read()
+                          print('decoded with', ' '.join(cmd))
+                          break
+              if raw is None or raw[:6] not in (b'070701', b'070702'):
+                  sys.exit('ramdisk is not gzip cpio; Oreo bootloader would report invalid ramdisk')
+              out = gzip.compress(raw, compresslevel=9, mtime=0)
+              print('gzip ramdisk bytes', len(out))
+              return out
 
           def parse(d):
               assert d[:8] == b'ANDROID!', 'bad boot magic'
@@ -329,10 +363,11 @@ jobs:
           built = open(sys.argv[2], 'rb').read()
           st = parse(stock); b = parse(built)
           pg = st['pg']
-          # Stock kernel bytes + stock DTBH. TWRP ramdisk only.
-          kernel = st['k']; ramdisk = b['r']; dt = st['dt']
+          # Stock kernel bytes + stock DTBH. TWRP ramdisk forced to gzip.
+          kernel = st['k']; ramdisk = as_gzip_ramdisk(b['r']); dt = st['dt']
           assert len(kernel) > 0, 'stock kernel is empty'
-          assert len(ramdisk) > 0, 'built ramdisk is empty'
+          assert ramdisk[:2] == b'\x1f\x8b', 'packed ramdisk is not gzip'
+          print('stock ramdisk magic', st['r'][:4].hex())
           print('kernel', len(kernel), 'ramdisk', len(ramdisk), 'dt', len(dt))
 
           hdr = bytearray(stock[:pg])
@@ -362,7 +397,7 @@ jobs:
           sha256sum recovery.img TWRP-recovery.tar
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: twrp-${{ steps.normalize.outputs.codename }}
           path: |
@@ -373,7 +408,7 @@ jobs:
 
       - name: Upload debug logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: debug-${{ github.run_id }}
           path: |
