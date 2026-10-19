@@ -51,6 +51,7 @@ jobs:
           echo "매니페스트 브랜치: $MANIFEST_BRANCH"
           echo "빌드 대상: ${BUILD_TARGET}image"
           echo "ABI: armeabi-v7a (32비트 arm, zygote32), 커널 슬롯: zImage"
+          echo "같은 브랜치에 이미 실행이 있으면 이전 실행은 취소됩니다. 그 취소는 디스크 오류가 아닙니다."
           echo "::endgroup::"
 
       - name: Check Out
@@ -58,7 +59,14 @@ jobs:
 
       - name: Free disk space
         run: |
+          set -euo pipefail
           df -h /
+          avail_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+          echo "남은 공간: ${avail_kb}KB"
+          if [ "$avail_kb" -lt 41943040 ]; then
+            echo "::error::루트 디스크 여유가 40GB 미만입니다. 빌드를 중단합니다."
+            exit 1
+          fi
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
                       /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift
           sudo docker image prune --all --force >/dev/null 2>&1 || true
