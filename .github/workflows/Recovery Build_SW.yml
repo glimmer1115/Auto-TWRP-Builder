@@ -45,12 +45,12 @@ jobs:
     steps:
       - name: Display Run Parameters
         run: |
-          echo "::group::User Environment Variables"
-          echo "Image URL: ${IMG_URL:-<repo root recovery.img>}"
-          echo "Manifest URL: $MANIFEST_URL"
-          echo "Manifest Branch: $MANIFEST_BRANCH"
-          echo "Build Target: ${BUILD_TARGET}image"
-          echo "ABI: armeabi-v7a (32-bit arm, zygote32), kernel slot: zImage"
+          echo "::group::실행 값"
+          echo "이미지 주소: ${IMG_URL:-<저장소 루트 recovery.img>}"
+          echo "매니페스트 주소: $MANIFEST_URL"
+          echo "매니페스트 브랜치: $MANIFEST_BRANCH"
+          echo "빌드 대상: ${BUILD_TARGET}image"
+          echo "ABI: armeabi-v7a (32비트 arm, zygote32), 커널 슬롯: zImage"
           echo "::endgroup::"
 
       - name: Check Out
@@ -110,16 +110,16 @@ jobs:
           # is capped, and a dead connection is dropped after 30s below 1KB/s.
           for spec in "4 50m" "2 40m"; do
             set -- $spec
-            echo "repo sync -j$1 timeout $2"
+            echo "repo sync -j$1 제한시간 $2"
             if timeout "$2" repo sync -j"$1" --force-sync --no-clone-bundle --no-tags -c --fail-fast; then
               ok=1
               break
             fi
-            echo "Repo sync attempt failed, retrying..."
+            echo "repo sync 실패. 다시 시도합니다."
             sleep 15
           done
           if [ "$ok" != "1" ]; then
-            echo "::error::repo sync failed (timed out or errored)"
+            echo "::error::repo sync 실패 (시간 초과 또는 오류)"
             exit 1
           fi
 
@@ -127,12 +127,12 @@ jobs:
         working-directory: ${{ env.WS }}
         run: |
           if [ -n "$IMG_URL" ]; then
-            echo "Downloading $IMG_URL"
+            echo "다운로드: $IMG_URL"
             wget --tries=3 --timeout=60 -O recovery.img "$IMG_URL"
           else
-            echo "Using recovery.img from repository root"
+            echo "저장소 루트의 recovery.img 를 사용합니다."
             if [ ! -f "${GITHUB_WORKSPACE}/recovery.img" ]; then
-              echo "::error::recovery.img not found in repo root"
+              echo "::error::저장소 루트에 recovery.img 가 없습니다."
               exit 1
             fi
             cp "${GITHUB_WORKSPACE}/recovery.img" recovery.img
@@ -141,7 +141,7 @@ jobs:
           file recovery.img
           sha256sum recovery.img
           if [ "$(head -c 8 recovery.img)" != "ANDROID!" ]; then
-            echo "::error::recovery.img is not an Android boot image"
+            echo "::error::recovery.img 가 안드로이드 부트 이미지가 아닙니다."
             head -c 300 recovery.img
             exit 1
           fi
@@ -153,7 +153,7 @@ jobs:
           if [ -f "${GITHUB_WORKSPACE}/scripts/build.py" ]; then
             python3 "${GITHUB_WORKSPACE}/scripts/build.py" -i recovery.img -o device
           else
-            echo "scripts/build.py not found -> using twrpdtgen directly"
+            echo "scripts/build.py 없음. twrpdtgen 을 직접 사용합니다."
             python3 -m twrpdtgen recovery.img -o device
           fi
 
@@ -171,19 +171,19 @@ jobs:
           if [ -f "bootable/recovery/prebuilt/relink.sh" ]; then
             printf '#!/bin/sh\n' > bootable/recovery/prebuilt/relink.sh
             chmod +x bootable/recovery/prebuilt/relink.sh
-            echo "Neutralized relink.sh"
+            echo "relink.sh 를 비활성화했습니다."
           fi
 
           if [ -z "$TREE" ] || [ ! -d "$TREE" ]; then
             TREE=$(find device -name AndroidProducts.mk -newer recovery.img -printf '%h\n' 2>/dev/null | head -1)
           fi
           if [ -z "$TREE" ] || [ ! -d "$TREE" ]; then
-            echo "::error::Generated device tree path not found!"
+            echo "::error::생성된 기기 트리 경로를 찾지 못했습니다."
             ls -R device | head -50 || true
             exit 1
           fi
           TREE=$(realpath --relative-to="$(pwd)" "$TREE")
-          echo "Generated tree path: $TREE"
+          echo "생성된 트리 경로: $TREE"
           CODENAME=$(basename "$TREE")
 
           cd "$TREE"
@@ -195,7 +195,7 @@ jobs:
             fi
           done
           if [ -z "$MK" ]; then
-            echo "::error::No omni_/twrp_ makefile found in $TREE"
+            echo "::error::$TREE 에 omni_/twrp_ makefile 이 없습니다."
             ls -l
             exit 1
           fi
@@ -207,7 +207,7 @@ jobs:
           sed -i 's/omni_/twrp_/g' AndroidProducts.mk "$MK"
           sed -i 's#vendor/omni/config/common.mk#vendor/twrp/config/common.mk#g' "$MK"
           grep -Eq "PRODUCT_NAME *:= *twrp_${CODENAME}" "$MK" \
-            || echo "::warning::PRODUCT_NAME in $MK is not twrp_${CODENAME}; lunch may fail"
+            || echo "::warning::$MK 의 PRODUCT_NAME 이 twrp_${CODENAME} 이 아닙니다. lunch 가 실패할 수 있습니다."
 
           rm -f Android.bp
 
@@ -215,26 +215,26 @@ jobs:
           python3 - "$IMG" <<'PY'
           import struct, sys
           d = open(sys.argv[1], 'rb').read()
-          assert d[:8] == b'ANDROID!', 'bad boot magic'
+          assert d[:8] == b'ANDROID!', '부트 매직이 아닙니다.'
           ks, ka, rs, ra, ss, sa, ta, pg, dts = struct.unpack('<9I', d[8:44])
-          assert ks > 0, 'kernel size is 0'
+          assert ks > 0, '커널 크기가 0 입니다.'
           kernel = d[pg:pg + ks]
           if kernel[56:60] == b'ARM\x64':
-              kind = 'arm64 Image header (stock bytes; product ABI is still armeabi-v7a)'
+              kind = 'arm64 Image 헤더 (순정 바이트, 제품 ABI는 armeabi-v7a)'
           elif kernel.find(bytes.fromhex('18286f01'), 0, 0x400) >= 0:
               kind = 'ARM zImage'
           else:
-              kind = 'unrecognized kernel container'
+              kind = '알 수 없는 커널 형식'
           open('prebuilt/zImage', 'wb').write(kernel)
-          print('kernel bytes', ks, 'pagesize', pg, 'dt', dts)
-          print('detected:', kind)
-          print('saved stock kernel as prebuilt/zImage for the 32-bit arm build')
+          print('커널 바이트', ks, '페이지', pg, 'dt', dts)
+          print('판별:', kind)
+          print('32비트 빌드용으로 순정 커널을 prebuilt/zImage 에 저장했습니다.')
           PY
           ls -l prebuilt
           file prebuilt/zImage || true
 
           if [ ! -f "${GITHUB_WORKSPACE}/overrides/BoardConfig.mk" ]; then
-            echo "::error::overrides/BoardConfig.mk is missing"
+            echo "::error::overrides/BoardConfig.mk 가 없습니다."
             exit 1
           fi
           {
@@ -243,16 +243,16 @@ jobs:
             echo "DEVICE_PATH := ${TREE}"
             cat "${GITHUB_WORKSPACE}/overrides/BoardConfig.mk"
           } >> BoardConfig.mk
-          echo "Applied overrides/BoardConfig.mk"
+          echo "overrides/BoardConfig.mk 를 적용했습니다."
 
           if [ ! -f "${GITHUB_WORKSPACE}/overrides/init.recovery.samsungexynos7870.rc" ]; then
-            echo "::error::overrides/init.recovery.samsungexynos7870.rc is missing"
+            echo "::error::overrides/init.recovery.samsungexynos7870.rc 가 없습니다."
             exit 1
           fi
           cp "${GITHUB_WORKSPACE}/overrides/init.recovery.samsungexynos7870.rc" recovery/root/
           echo "TW_NO_SCREEN_BLANK :=" >> "$MK"
 
-          echo "---- arch lines ----"
+          echo "---- 아키텍처 설정 ----"
           grep -E 'TARGET_ARCH|TARGET_CPU_ABI|KERNEL_IMAGE|PREBUILT_KERNEL|TARGET_2ND' BoardConfig.mk
           echo "---- recovery/root ----"
           ls -l recovery/root
@@ -269,7 +269,7 @@ jobs:
           TREE: ${{ steps.normalize.outputs.tree }}
         run: |
           if [ ! -f "${TREE}/twrp_${CODENAME}.mk" ]; then
-            echo "::error::product makefile ${TREE}/twrp_${CODENAME}.mk is missing; refusing to call lunch"
+            echo "::error::제품 makefile ${TREE}/twrp_${CODENAME}.mk 가 없습니다. lunch 를 호출하지 않습니다."
             find device -name '*.mk' | head -40 || true
             exit 1
           fi
@@ -284,7 +284,7 @@ jobs:
           lunch_rc=$?
           set -e
           if [ "$lunch_rc" != "0" ]; then
-            echo "::error::lunch twrp_${CODENAME}-eng failed (exit $lunch_rc)"
+            echo "::error::lunch twrp_${CODENAME}-eng 실패 (종료 $lunch_rc)"
             exit 1
           fi
 
@@ -292,12 +292,12 @@ jobs:
           mka BOARD_USES_RECOVERY_AS_BOOT=false "${BUILD_TARGET}image" -j"$(nproc)" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
           rc=${PIPESTATUS[0]}
           if [ "$rc" != "0" ]; then
-            echo "::error::build failed with exit code $rc"
+            echo "::error::빌드 실패 (종료 코드 $rc)"
             [ -f out/error.log ] && tail -n 80 out/error.log
             exit "$rc"
           fi
           if [ ! -f "out/target/product/${CODENAME}/recovery.img" ]; then
-            echo "::error::build finished but recovery.img was not produced"
+            echo "::error::빌드는 끝났지만 recovery.img 가 생성되지 않았습니다."
             ls -l "out/target/product/${CODENAME}" || true
             exit 1
           fi
@@ -320,12 +320,12 @@ jobs:
           def as_gzip_ramdisk(blob):
               if blob[:2] == b'\x1f\x8b':
                   raw = gzip.decompress(blob)
-                  print('built ramdisk was gzip')
+                  print('빌드 램디스크는 gzip 입니다.')
               elif blob[:6] in (b'070701', b'070702'):
                   raw = blob
-                  print('built ramdisk was plain cpio')
+                  print('빌드 램디스크는 일반 cpio 입니다.')
               else:
-                  print('built ramdisk magic', blob[:4].hex())
+                  print('빌드 램디스크 매직', blob[:4].hex())
                   raw = None
                   td = tempfile.mkdtemp()
                   src = os.path.join(td, 'rd.bin')
@@ -339,20 +339,20 @@ jobs:
                       try:
                           subprocess.check_call(cmd)
                       except Exception as exc:
-                          print('decode failed', cmd, exc)
+                          print('램디스크 해제 실패', cmd, exc)
                           continue
                       if os.path.isfile(dst) and os.path.getsize(dst) > 0:
                           raw = open(dst, 'rb').read()
-                          print('decoded with', ' '.join(cmd))
+                          print('해제한 명령', ' '.join(cmd))
                           break
               if raw is None or raw[:6] not in (b'070701', b'070702'):
-                  sys.exit('ramdisk is not gzip cpio; Oreo bootloader would report invalid ramdisk')
+                  sys.exit('램디스크가 gzip cpio 가 아닙니다. 오레오 부트로더는 invalid ramdisk 로 멈춥니다.')
               out = gzip.compress(raw, compresslevel=9, mtime=0)
-              print('gzip ramdisk bytes', len(out))
+              print('gzip 램디스크 바이트', len(out))
               return out
 
           def parse(d):
-              assert d[:8] == b'ANDROID!', 'bad boot magic'
+              assert d[:8] == b'ANDROID!', '부트 매직이 아닙니다.'
               ks, ka, rs, ra, ss, sa, ta, pg, dts = struct.unpack('<9I', d[8:44])
               up = lambda n: (n + pg - 1) // pg * pg
               o1 = pg; o2 = o1 + up(ks); o3 = o2 + up(rs); o4 = o3 + up(ss)
@@ -365,10 +365,10 @@ jobs:
           pg = st['pg']
           # Stock kernel bytes + stock DTBH. TWRP ramdisk forced to gzip.
           kernel = st['k']; ramdisk = as_gzip_ramdisk(b['r']); dt = st['dt']
-          assert len(kernel) > 0, 'stock kernel is empty'
-          assert ramdisk[:2] == b'\x1f\x8b', 'packed ramdisk is not gzip'
-          print('stock ramdisk magic', st['r'][:4].hex())
-          print('kernel', len(kernel), 'ramdisk', len(ramdisk), 'dt', len(dt))
+          assert len(kernel) > 0, '순정 커널이 비어 있습니다.'
+          assert ramdisk[:2] == b'\x1f\x8b', '포장된 램디스크가 gzip 이 아닙니다.'
+          print('순정 램디스크 매직', st['r'][:4].hex())
+          print('커널', len(kernel), '램디스크', len(ramdisk), 'dt', len(dt))
 
           hdr = bytearray(stock[:pg])
           struct.pack_into('<II', hdr, 8, len(kernel), st['ka'])
@@ -386,9 +386,9 @@ jobs:
           up = lambda n: (n + pg - 1) // pg * pg
           pad = lambda x: x + b'\0' * (up(len(x)) - len(x))
           out = bytes(hdr) + pad(kernel) + pad(ramdisk) + pad(dt)
-          assert len(out) + len(TRAILER) <= PART_SIZE, 'image too large: %d' % (len(out) + len(TRAILER))
+          assert len(out) + len(TRAILER) <= PART_SIZE, '이미지가 너무 큽니다: %d' % (len(out) + len(TRAILER))
           open(sys.argv[3], 'wb').write(out)
-          print('final size (before trailer)', len(out), '/', PART_SIZE)
+          print('최종 크기 (트레일러 전)', len(out), '/', PART_SIZE)
           PY
           cd "$GITHUB_WORKSPACE/artifacts"
           printf 'SEANDROIDENFORCE' >> recovery.img
