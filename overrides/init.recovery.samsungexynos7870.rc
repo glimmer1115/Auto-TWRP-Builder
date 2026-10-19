@@ -1,3 +1,7 @@
+# SM-T583 (gtaxladwifikx) recovery USB.
+# Exynos 7870 / 3.18 stock gadget is legacy android_usb, not configfs.
+# TW_EXCLUDE_DEFAULT_USB_INIT is set, so this file owns adbd startup.
+
 on early-init
     setprop sys.usb.configfs 0
     setprop sys.usb.ffs.aio_compat 1

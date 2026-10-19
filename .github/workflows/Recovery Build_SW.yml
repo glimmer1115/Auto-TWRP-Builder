@@ -1,79 +1,385 @@
-name: TWRP Recovery Builder (SM-T583)
+name: "Recovery Build (SM-T583 32-bit)"
 
 on:
   workflow_dispatch:
+    inputs:
+      IMG_URL:
+        description: 'IMG_URL (optional). Leave EMPTY to use recovery.img in the repo root'
+        required: false
+        default: ''
+      MANIFEST_URL:
+        description: 'MANIFEST_URL'
+        required: true
+        default: 'https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp'
+      MANIFEST_BRANCH:
+        description: 'MANIFEST_BRANCH'
+        required: true
+        default: 'twrp-11'
+      BUILD_TARGET:
+        description: 'BUILD_TARGET'
+        required: true
+        default: 'recovery'
 
-env:
-  # [체크] 32비트 arm 아키텍처 고정
-  DEVICE_ARCH: arm
-  DEVICE_NAME: SM-T583
-  MAKEFILE_NAME: twrp_SM-T583
-  # [수정] 부실했던 마니페스트 URL 기본 주소 입력
-  MANIFEST_URL: https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git
-  MANIFEST_BRANCH: twrp-11
+# A stuck run must not pin the queue. ubuntu-20.04 no longer has runners,
+# and a job waiting on that label stays "Queued" until the workflow is cancelled.
+concurrency:
+  group: recovery-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
-
+    if: github.event.repository.owner.id == github.event.sender.id
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    env:
+      IMG_URL: ${{ inputs.IMG_URL }}
+      MANIFEST_URL: ${{ inputs.MANIFEST_URL }}
+      MANIFEST_BRANCH: ${{ inputs.MANIFEST_BRANCH }}
+      BUILD_TARGET: ${{ inputs.BUILD_TARGET }}
+      WS: ${{ github.workspace }}/workspace
+      GIT_TERMINAL_PROMPT: "0"
+      DEBIAN_FRONTEND: noninteractive
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v3
+      - name: Display Run Parameters
+        run: |
+          echo "::group::User Environment Variables"
+          echo "Image URL: ${IMG_URL:-<repo root recovery.img>}"
+          echo "Manifest URL: $MANIFEST_URL"
+          echo "Manifest Branch: $MANIFEST_BRANCH"
+          echo "Build Target: ${BUILD_TARGET}image"
+          echo "ABI: armeabi-v7a (32-bit arm, zygote32), kernel slot: zImage"
+          echo "::endgroup::"
 
-    - name: Free Disk Space & Optimize Environment
-      run: |
-        sudo docker image prune --all --force
-        sudo rm -rf /usr/share/dotnet /etc/mysql /etc/php /usr/local/lib/android /opt/ghc
-        sudo apt-get update
-        sudo apt-get install -y bc build-essential ccache curl g++-multilib gcc-multilib git gnupg gperf imageMagick lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3
+      - name: Check Out
+        uses: actions/checkout@v4
 
-    - name: Install Repo Tool
-      run: |
-        mkdir -p ~/bin
-        # [수정] 정상적인 repo 실행 바이너리 다운로드 주소로 변경
-        curl https://googleapis.com > ~/bin/repo
-        chmod a+x ~/bin/repo
-        sudo ln -sf ~/bin/repo /usr/bin/repo
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
+          df -h /
 
-    - name: Initialize and Sync TWRP Manifest
-      run: |
-        mkdir twrp
-        cd twrp
-        git config --global user.name "Forked-Developer"
-        git config --global user.email "forked@example.com"
-        repo init --depth=1 -u ${{ env.MANIFEST_URL }} -b ${{ env.MANIFEST_BRANCH }}
-        repo sync -j$(nproc --all) --force-sync
+      - name: Prepare the environment
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install \
+            gperf gcc-multilib g++-multilib libc6-dev lib32ncurses-dev x11proto-core-dev \
+            libx11-dev tree lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc bc ccache \
+            lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libxml2 \
+            lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp \
+            qemu-user-static libncurses5 python3 python3-pip python-is-python3 cpio wget file \
+            unzip zip git curl
+          python3 -m pip install --user -U twrpdtgen
 
-    - name: Link Forked Device Tree
-      run: |
-        # 포크한 현재 내 저장소를 소스 트리 내부 올바른 기기 경로로 복사
-        cp -r ${{ github.workspace }} twrp/device/samsung/${{ env.DEVICE_NAME }}
+      - name: Install OpenJDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '11'
 
-    - name: Extract Stock Kernel (zImage)
-      run: |
-        cd twrp
-        TARGET_DIR="device/samsung/${{ env.DEVICE_NAME }}/prebuilt"
-        mkdir -p $TARGET_DIR
-        
-        # 32비트 전용 zImage 예외처리 및 패키징 확인 로그
-        if [ -f "device/samsung/${{ env.DEVICE_NAME }}/recovery.img" ]; then
-          echo "순정 리커버리가 확인되었습니다. 32비트 아키텍처(zImage) 추출 규칙을 적용합니다."
-        fi
+      - name: Install repo
+        run: |
+          sudo curl -fsSL --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 120 \
+            https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
+          sudo chmod a+x /usr/local/bin/repo
+          repo --version || true
 
-    - name: Build TWRP Recovery
-      run: |
-        cd twrp
-        export ALLOW_MISSING_DEPENDENCIES=true
-        source build/envsetup.sh
-        
-        # 기기 메이크파일 선언 조건 체크
-        lunch ${{ env.MAKEFILE_NAME }}-eng || lunch omni_${{ env.DEVICE_NAME }}-eng
-        
-        make clean
-        make recoveryimage -j$(nproc --all)
+      - name: Initialize repo
+        timeout-minutes: 30
+        run: |
+          mkdir -p "$WS"
+          cd "$WS"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global color.ui false
+          git config --global http.lowSpeedLimit 1000
+          git config --global http.lowSpeedTime 30
+          repo init --depth=1 --no-repo-verify -u "$MANIFEST_URL" -b "$MANIFEST_BRANCH"
 
-    - name: Upload Recovery Image Artifact
-      uses: actions/upload-artifact@v3
-      with:
-        name: TWRP-${{ env.DEVICE_NAME }}-Oreo-32bit
-        path: twrp/out/target/product/${{ env.DEVICE_NAME }}/recovery.img
+      - name: Repo Sync
+        timeout-minutes: 120
+        working-directory: ${{ env.WS }}
+        run: |
+          ok=0
+          # Stalled git fetches used to sit here until the job limit. Each attempt
+          # is capped, and a dead connection is dropped after 30s below 1KB/s.
+          for spec in "4 50m" "2 40m"; do
+            set -- $spec
+            echo "repo sync -j$1 timeout $2"
+            if timeout "$2" repo sync -j"$1" --force-sync --no-clone-bundle --no-tags -c --fail-fast; then
+              ok=1
+              break
+            fi
+            echo "Repo sync attempt failed, retrying..."
+            sleep 15
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::repo sync failed (timed out or errored)"
+            exit 1
+          fi
+
+      - name: Get recovery image
+        working-directory: ${{ env.WS }}
+        run: |
+          if [ -n "$IMG_URL" ]; then
+            echo "Downloading $IMG_URL"
+            wget --tries=3 --timeout=60 -O recovery.img "$IMG_URL"
+          else
+            echo "Using recovery.img from repository root"
+            if [ ! -f "${GITHUB_WORKSPACE}/recovery.img" ]; then
+              echo "::error::recovery.img not found in repo root"
+              exit 1
+            fi
+            cp "${GITHUB_WORKSPACE}/recovery.img" recovery.img
+          fi
+          ls -l recovery.img
+          file recovery.img
+          sha256sum recovery.img
+          if [ "$(head -c 8 recovery.img)" != "ANDROID!" ]; then
+            echo "::error::recovery.img is not an Android boot image"
+            head -c 300 recovery.img
+            exit 1
+          fi
+
+      - name: Generate Device Tree
+        id: gdt
+        working-directory: ${{ env.WS }}
+        run: |
+          if [ -f "${GITHUB_WORKSPACE}/scripts/build.py" ]; then
+            python3 "${GITHUB_WORKSPACE}/scripts/build.py" -i recovery.img -o device
+          else
+            echo "scripts/build.py not found -> using twrpdtgen directly"
+            python3 -m twrpdtgen recovery.img -o device
+          fi
+
+      - name: Normalize Device Tree
+        id: normalize
+        timeout-minutes: 20
+        working-directory: ${{ env.WS }}
+        env:
+          DEVICE_PATH_OUT: ${{ steps.gdt.outputs.DEVICE_PATH }}
+        run: |
+          set -e
+          IMG="$(pwd)/recovery.img"
+          TREE="$DEVICE_PATH_OUT"
+
+          if [ -f "bootable/recovery/prebuilt/relink.sh" ]; then
+            printf '#!/bin/sh\n' > bootable/recovery/prebuilt/relink.sh
+            chmod +x bootable/recovery/prebuilt/relink.sh
+            echo "Neutralized relink.sh"
+          fi
+
+          if [ -z "$TREE" ] || [ ! -d "$TREE" ]; then
+            TREE=$(find device -name AndroidProducts.mk -newer recovery.img -printf '%h\n' 2>/dev/null | head -1)
+          fi
+          if [ -z "$TREE" ] || [ ! -d "$TREE" ]; then
+            echo "::error::Generated device tree path not found!"
+            ls -R device | head -50 || true
+            exit 1
+          fi
+          TREE=$(realpath --relative-to="$(pwd)" "$TREE")
+          echo "Generated tree path: $TREE"
+          CODENAME=$(basename "$TREE")
+
+          cd "$TREE"
+          MK=""
+          for f in omni_*.mk twrp_*.mk; do
+            if [ -f "$f" ]; then
+              MK="$f"
+              break
+            fi
+          done
+          if [ -z "$MK" ]; then
+            echo "::error::No omni_/twrp_ makefile found in $TREE"
+            ls -l
+            exit 1
+          fi
+          if [[ "$MK" == omni_* ]]; then
+            mv "$MK" "twrp_${CODENAME}.mk"
+            MK="twrp_${CODENAME}.mk"
+          fi
+
+          sed -i 's/omni_/twrp_/g' AndroidProducts.mk "$MK"
+          sed -i 's#vendor/omni/config/common.mk#vendor/twrp/config/common.mk#g' "$MK"
+          grep -Eq "PRODUCT_NAME *:= *twrp_${CODENAME}" "$MK" \
+            || echo "::warning::PRODUCT_NAME in $MK is not twrp_${CODENAME}; lunch may fail"
+
+          rm -f Android.bp
+
+          mkdir -p prebuilt recovery/root
+          python3 - "$IMG" <<'PY'
+          import struct, sys
+          d = open(sys.argv[1], 'rb').read()
+          assert d[:8] == b'ANDROID!', 'bad boot magic'
+          ks, ka, rs, ra, ss, sa, ta, pg, dts = struct.unpack('<9I', d[8:44])
+          assert ks > 0, 'kernel size is 0'
+          kernel = d[pg:pg + ks]
+          if kernel[56:60] == b'ARM\x64':
+              kind = 'arm64 Image header (stock bytes; product ABI is still armeabi-v7a)'
+          elif kernel.find(bytes.fromhex('18286f01'), 0, 0x400) >= 0:
+              kind = 'ARM zImage'
+          else:
+              kind = 'unrecognized kernel container'
+          open('prebuilt/zImage', 'wb').write(kernel)
+          print('kernel bytes', ks, 'pagesize', pg, 'dt', dts)
+          print('detected:', kind)
+          print('saved stock kernel as prebuilt/zImage for the 32-bit arm build')
+          PY
+          ls -l prebuilt
+          file prebuilt/zImage || true
+
+          if [ ! -f "${GITHUB_WORKSPACE}/overrides/BoardConfig.mk" ]; then
+            echo "::error::overrides/BoardConfig.mk is missing"
+            exit 1
+          fi
+          {
+            echo ""
+            echo "# ---- appended by workflow: overrides/BoardConfig.mk ----"
+            echo "DEVICE_PATH := ${TREE}"
+            cat "${GITHUB_WORKSPACE}/overrides/BoardConfig.mk"
+          } >> BoardConfig.mk
+          echo "Applied overrides/BoardConfig.mk"
+
+          if [ ! -f "${GITHUB_WORKSPACE}/overrides/init.recovery.samsungexynos7870.rc" ]; then
+            echo "::error::overrides/init.recovery.samsungexynos7870.rc is missing"
+            exit 1
+          fi
+          cp "${GITHUB_WORKSPACE}/overrides/init.recovery.samsungexynos7870.rc" recovery/root/
+          echo "Applied init.recovery rc"
+
+          echo "---- arch lines ----"
+          grep -E 'TARGET_ARCH|TARGET_CPU_ABI|KERNEL_IMAGE|PREBUILT_KERNEL|TARGET_2ND' BoardConfig.mk
+          echo "---- recovery/root ----"
+          ls -l recovery/root
+          cd - > /dev/null
+
+          echo "codename=${CODENAME}" >> "$GITHUB_OUTPUT"
+          echo "tree=${TREE}" >> "$GITHUB_OUTPUT"
+
+      - name: Build recovery
+        timeout-minutes: 90
+        working-directory: ${{ env.WS }}
+        env:
+          CODENAME: ${{ steps.normalize.outputs.codename }}
+          TREE: ${{ steps.normalize.outputs.tree }}
+        run: |
+          if [ ! -f "${TREE}/twrp_${CODENAME}.mk" ]; then
+            echo "::error::product makefile ${TREE}/twrp_${CODENAME}.mk is missing; refusing to call lunch"
+            find device -name '*.mk' | head -40 || true
+            exit 1
+          fi
+          # Close stdin first. lunch without a resolved product reads a menu
+          # and will block until the job timeout on a runner with no TTY.
+          exec 0</dev/null
+          set +e
+          export ALLOW_MISSING_DEPENDENCIES=true
+          export LC_ALL=C
+          source build/envsetup.sh
+          lunch "twrp_${CODENAME}-eng"
+          lunch_rc=$?
+          set -e
+          if [ "$lunch_rc" != "0" ]; then
+            echo "::error::lunch twrp_${CODENAME}-eng failed (exit $lunch_rc)"
+            exit 1
+          fi
+
+          set -o pipefail
+          mka BOARD_USES_RECOVERY_AS_BOOT=false "${BUILD_TARGET}image" -j"$(nproc)" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" != "0" ]; then
+            echo "::error::build failed with exit code $rc"
+            [ -f out/error.log ] && tail -n 80 out/error.log
+            exit "$rc"
+          fi
+          if [ ! -f "out/target/product/${CODENAME}/recovery.img" ]; then
+            echo "::error::build finished but recovery.img was not produced"
+            ls -l "out/target/product/${CODENAME}" || true
+            exit 1
+          fi
+
+      - name: Package for Odin
+        working-directory: ${{ env.WS }}
+        env:
+          CODENAME: ${{ steps.normalize.outputs.codename }}
+        run: |
+          set -e
+          OUT="out/target/product/${CODENAME}"
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+          cp "$OUT/recovery.img" built_recovery.img
+          python3 - recovery.img built_recovery.img "$GITHUB_WORKSPACE/artifacts/recovery.img" <<'PY'
+          import struct, sys, hashlib
+
+          PART_SIZE = 39845888
+          TRAILER = b'SEANDROIDENFORCE'
+
+          def parse(d):
+              assert d[:8] == b'ANDROID!', 'bad boot magic'
+              ks, ka, rs, ra, ss, sa, ta, pg, dts = struct.unpack('<9I', d[8:44])
+              up = lambda n: (n + pg - 1) // pg * pg
+              o1 = pg; o2 = o1 + up(ks); o3 = o2 + up(rs); o4 = o3 + up(ss)
+              return dict(ka=ka, ra=ra, sa=sa, pg=pg,
+                          k=d[o1:o1 + ks], r=d[o2:o2 + rs], dt=d[o4:o4 + dts])
+
+          stock = open(sys.argv[1], 'rb').read()
+          built = open(sys.argv[2], 'rb').read()
+          st = parse(stock); b = parse(built)
+          pg = st['pg']
+          # Stock kernel bytes + stock DTBH. TWRP ramdisk only.
+          kernel = st['k']; ramdisk = b['r']; dt = st['dt']
+          assert len(kernel) > 0, 'stock kernel is empty'
+          assert len(ramdisk) > 0, 'built ramdisk is empty'
+          print('kernel', len(kernel), 'ramdisk', len(ramdisk), 'dt', len(dt))
+
+          hdr = bytearray(stock[:pg])
+          struct.pack_into('<II', hdr, 8, len(kernel), st['ka'])
+          struct.pack_into('<II', hdr, 16, len(ramdisk), st['ra'])
+          struct.pack_into('<II', hdr, 24, 0, st['sa'])
+          struct.pack_into('<I', hdr, 40, len(dt))
+
+          h = hashlib.sha1()
+          for blob in (kernel, ramdisk, b''):
+              h.update(blob); h.update(struct.pack('<I', len(blob)))
+          if dt:
+              h.update(dt); h.update(struct.pack('<I', len(dt)))
+          hdr[576:608] = h.digest() + b'\0' * 12
+
+          up = lambda n: (n + pg - 1) // pg * pg
+          pad = lambda x: x + b'\0' * (up(len(x)) - len(x))
+          out = bytes(hdr) + pad(kernel) + pad(ramdisk) + pad(dt)
+          assert len(out) + len(TRAILER) <= PART_SIZE, 'image too large: %d' % (len(out) + len(TRAILER))
+          open(sys.argv[3], 'wb').write(out)
+          print('final size (before trailer)', len(out), '/', PART_SIZE)
+          PY
+          cd "$GITHUB_WORKSPACE/artifacts"
+          printf 'SEANDROIDENFORCE' >> recovery.img
+          tar -H ustar -c recovery.img > TWRP-recovery.tar
+          ls -l
+          sha256sum recovery.img TWRP-recovery.tar
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: twrp-${{ steps.normalize.outputs.codename }}
+          path: |
+            artifacts/recovery.img
+            artifacts/TWRP-recovery.tar
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload debug logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-${{ github.run_id }}
+          path: |
+            build.log
+            workspace/out/error.log
+            workspace/out/verbose.log.gz
+            workspace/device/
+          retention-days: 7
+          if-no-files-found: ignore
