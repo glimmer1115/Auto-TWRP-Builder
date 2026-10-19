@@ -14,7 +14,7 @@ on:
       MANIFEST_BRANCH:
         description: 'MANIFEST_BRANCH'
         required: true
-        default: 'twrp-11'
+        default: 'twrp-9.0'
       BUILD_TARGET:
         description: 'BUILD_TARGET'
         required: true
