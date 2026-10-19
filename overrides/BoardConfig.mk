@@ -69,10 +69,11 @@ RECOVERY_GRAPHICS_USE_LINELENGTH := true
 RECOVERY_SDCARD_ON_DATA := true
 
 TW_THEME := portrait_hdpi
-TW_BRIGHTNESS_PATH := "/sys/class/backlight/panel/brightness"
-TW_MAX_BRIGHTNESS := 306
+# SM-T580 official TWRP uses the dsim device node, not /sys/class/backlight/panel.
+# The class node leaves this panel lit. Hardware max on that tree is 255.
+TW_BRIGHTNESS_PATH := "/sys/devices/14800000.dsim/backlight/panel/brightness"
+TW_MAX_BRIGHTNESS := 255
 TW_DEFAULT_BRIGHTNESS := 162
-# Leave blanking enabled. true keeps the panel lit for the whole session.
 TW_NO_SCREEN_BLANK :=
 TW_NO_REBOOT_BOOTLOADER := true
 TW_HAS_DOWNLOAD_MODE := true

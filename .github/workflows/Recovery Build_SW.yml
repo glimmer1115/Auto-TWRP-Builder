@@ -258,7 +258,12 @@ jobs:
             exit 1
           fi
           cp "${GITHUB_WORKSPACE}/overrides/init.recovery.samsungexynos7870.rc" recovery/root/
-          echo "TW_NO_SCREEN_BLANK :=" >> "$MK"
+          {
+            echo 'TW_BRIGHTNESS_PATH := "/sys/devices/14800000.dsim/backlight/panel/brightness"'
+            echo "TW_MAX_BRIGHTNESS := 255"
+            echo "TW_DEFAULT_BRIGHTNESS := 162"
+            echo "TW_NO_SCREEN_BLANK :="
+          } >> "$MK"
 
           echo "---- 아키텍처 설정 ----"
           grep -E 'TARGET_ARCH|TARGET_CPU_ABI|KERNEL_IMAGE|PREBUILT_KERNEL|TARGET_2ND' BoardConfig.mk
