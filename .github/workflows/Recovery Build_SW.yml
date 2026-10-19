@@ -250,7 +250,7 @@ jobs:
             exit 1
           fi
           cp "${GITHUB_WORKSPACE}/overrides/init.recovery.samsungexynos7870.rc" recovery/root/
-          echo "Applied init.recovery rc"
+          echo "TW_NO_SCREEN_BLANK :=" >> "$MK"
 
           echo "---- arch lines ----"
           grep -E 'TARGET_ARCH|TARGET_CPU_ABI|KERNEL_IMAGE|PREBUILT_KERNEL|TARGET_2ND' BoardConfig.mk
