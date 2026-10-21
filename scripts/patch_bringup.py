@@ -59,6 +59,31 @@ def patch_init_rc(text):
     return updated
 
 
+def patch_usb_v1(text):
+    old = (
+        "            D(\"[ %s: Switching to V1_descriptor format errno=%d ]\", USB_FFS_ADB_EP0, errno);\n"
+        "            ret = adb_write(h->control, &v1_descriptor, sizeof(v1_descriptor));\n"
+    )
+    new = (
+        "            adb_close(h->control);\n"
+        "            h->control = adb_open(USB_FFS_ADB_EP0, O_RDWR);\n"
+        "            if (h->control < 0) {\n"
+        "                PLOG(ERROR) << \"SM-T583: reopen functionfs ep0\";\n"
+        "                goto err;\n"
+        "            }\n"
+        "            LOG(INFO) << \"SM-T583: functionfs v1 descriptors\";\n"
+        "            ret = adb_write(h->control, &v1_descriptor, sizeof(v1_descriptor));\n"
+    )
+    if old not in text:
+        raise SystemExit("adbd v1 descriptor fallback was not found")
+    updated = text.replace(old, new, 1)
+    if "SM-T583: functionfs v1 descriptors" not in updated:
+        raise SystemExit("adbd v1 descriptor fallback was not patched")
+    if updated.count("adb_write(h->control, &v1_descriptor") != 1:
+        raise SystemExit("adbd v1 descriptor write was duplicated")
+    return updated
+
+
 def patch_usb(text):
     marker = "h->bulk_out = adb_open(USB_FFS_ADB_OUT, O_RDWR);"
     start = text.find(marker)
@@ -130,6 +155,10 @@ def patch_adb_main(text):
     return updated
 
 
+def _descriptors_ready(v2_ok, same_fd_v1, reopened_v1):
+    return v2_ok or same_fd_v1 or reopened_v1
+
+
 def simulate_gadget_enable():
     # Recovery log: unlabeled toybox died with EACCES, enable ran 1ms later,
     # and softconnect stayed 0. Stock adbd writes descriptors in about 60ms.
@@ -148,6 +177,13 @@ def simulate_gadget_enable():
     if not connected(2000, True):
         raise SystemExit("recovery-domain wait does not cover the descriptor write")
     print("sim: denied toybox exec enables an empty gadget; usbwait.sh does not")
+    # Kernel 3.18 rejects the v2 blob. The following v1 write on that same fd
+    # also fails, so functionfs never becomes ready and softconnect stays 0.
+    if _descriptors_ready(v2_ok=False, same_fd_v1=False, reopened_v1=False):
+        raise SystemExit("a poisoned ep0 must not publish descriptors")
+    if not _descriptors_ready(v2_ok=False, same_fd_v1=False, reopened_v1=True):
+        raise SystemExit("reopening ep0 did not publish v1 descriptors")
+    print("sim: v2 reject poisons ep0; reopening it publishes v1 before enable")
 
 
 def self_test():
@@ -215,6 +251,17 @@ def self_test():
         "\n"
         "    h->max_rw = MAX_PAYLOAD;\n"
     )
+    v1_sample = (
+        "        ret = adb_write(h->control, &v2_descriptor, sizeof(v2_descriptor));\n"
+        "        if (ret < 0) {\n"
+        "            v1_descriptor.header.magic = cpu_to_le32(FUNCTIONFS_DESCRIPTORS_MAGIC);\n"
+        "            D(\"[ %s: Switching to V1_descriptor format errno=%d ]\", USB_FFS_ADB_EP0, errno);\n"
+        "            ret = adb_write(h->control, &v1_descriptor, sizeof(v1_descriptor));\n"
+        "        }\n"
+    )
+    patched_v1 = patch_usb_v1(v1_sample)
+    if "adb_close(h->control)" not in patched_v1 or "functionfs v1 descriptors" not in patched_v1:
+        raise SystemExit("v1 fallback still writes through the rejected ep0")
     patched_usb = patch_usb(sample)
     if "for (int attempt = 0; attempt < 200 && h->bulk_out < 0;" not in patched_usb:
         raise SystemExit("adbd does not wait for ep1")
@@ -638,8 +685,9 @@ if __name__ == "__main__":
     elif len(sys.argv) == 3 and sys.argv[1] == "--usb-ffs":
         path = sys.argv[2]
         text = open(path, encoding="utf-8").read()
+        text = patch_usb_v1(text)
         open(path, "w", encoding="utf-8", newline="\n").write(patch_usb(text))
-        print("adbd 가 ep1 생성 전에 ep0 를 닫지 않습니다.")
+        print("adbd 가 v1 디스크립터 전에 ep0 를 다시 열고, ep1 을 기다립니다.")
     elif len(sys.argv) == 3 and sys.argv[1] == "--adb-main":
         path = sys.argv[2]
         text = open(path, encoding="utf-8").read()

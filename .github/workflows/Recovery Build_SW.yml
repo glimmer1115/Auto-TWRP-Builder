@@ -509,6 +509,10 @@ jobs:
             echo "::error::ep0 가 shell 계정에 열려 있지 않습니다."
             exit 1
           fi
+          if ! grep -a -q 'SM-T583: functionfs v1 descriptors' "$ROOT/sbin/adbd"; then
+            echo "::error::거절된 v2 디스크립터 뒤에 ep0 를 다시 열지 않습니다."
+            exit 1
+          fi
           if ! grep -a -q 'SM-T583: wait for functionfs endpoints' "$ROOT/sbin/adbd"; then
             echo "::error::adbd 가 ep1 생성 전에 ep0 를 닫습니다."
             exit 1
