@@ -124,13 +124,15 @@ jobs:
           <?xml version="1.0" encoding="UTF-8"?>
           <manifest>
             <remove-project name="platform/frameworks/compile/slang"/>
+            <remove-project name="platform/frameworks/compile/libbcc"/>
+            <remove-project name="platform/frameworks/rs"/>
           </manifest>
           EOF
           ok=0
           # Stalled git fetches used to sit here until the job limit. Each attempt
           # is capped, and a dead connection is dropped after 30s below 1KB/s.
-          # slang is the RenderScript compiler. Recovery does not build it, and
-          # googlesource returns 503 for the android-8.1.0_r51 tag.
+          # RenderScript is not in the recovery image. slang's tag fetch returns
+          # 503, and frameworks/rs then fails ckati looking for rs_version.mk.
           for spec in "4 50m" "2 40m"; do
             set -- $spec
             echo "repo sync -j$1 제한시간 $2"
@@ -357,6 +359,10 @@ jobs:
             echo "::error::빌드용 python 이 Python 2가 아닙니다. Omni 8.1 스크립트가 print 문법에서 멈춥니다."
             python --version || true
             exit 1
+          fi
+          if [ ! -f frameworks/compile/slang/rs_version.mk ]; then
+            mkdir -p frameworks/compile/slang
+            printf '%s\n' 'RS_VERSION := 24' 'RS_VERSION_DEFINE := -DRS_VERSION=$(RS_VERSION)' > frameworks/compile/slang/rs_version.mk
           fi
           set +e
           export ALLOW_MISSING_DEPENDENCIES=true
