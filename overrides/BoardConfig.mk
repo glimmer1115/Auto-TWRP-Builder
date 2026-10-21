@@ -2,11 +2,10 @@
 # Appended to the END of the generated BoardConfig.mk by the workflow.
 # Last assignment wins. DEVICE_PATH is defined by the workflow just above this block.
 #
-# The installed system is zygote32 / armeabi-v7a. The boot kernel is not:
-# stock recovery.img carries an ARM64 Image, and the TWRP builds that reach
-# a UI on this SoC use a 64-bit recovery ramdisk on that kernel.
-# Keep the stock T583 kernel bytes and board id SRPRA23C001RU.
-# Do not substitute the SM-T580 kernel or board id FPRPGTAX000RU.
+# Stock recovery init, adbd, and recovery are static ELF32 (EM_ARM, no linker).
+# A 64-bit ramdisk on this kernel resets every 5 seconds, so adb never enumerates.
+# The boot kernel stays the stock ARM64 Image. Do not use the SM-T580 kernel
+# or board id FPRPGTAX000RU.
 
 TARGET_BOARD_PLATFORM := exynos5
 TARGET_SOC := exynos7870
@@ -14,17 +13,17 @@ TARGET_BOOTLOADER_BOARD_NAME := universal7870
 TARGET_NO_BOOTLOADER := true
 TARGET_NO_RADIOIMAGE := true
 
-TARGET_ARCH := arm64
-TARGET_ARCH_VARIANT := armv8-a
-TARGET_CPU_ABI := arm64-v8a
-TARGET_CPU_ABI2 :=
-TARGET_CPU_VARIANT := generic
+TARGET_ARCH := arm
+TARGET_ARCH_VARIANT := armv7-a-neon
+TARGET_CPU_ABI := armeabi-v7a
+TARGET_CPU_ABI2 := armeabi
+TARGET_CPU_VARIANT := cortex-a53
 TARGET_CPU_SMP := true
-TARGET_2ND_ARCH := arm
-TARGET_2ND_ARCH_VARIANT := armv7-a-neon
-TARGET_2ND_CPU_ABI := armeabi-v7a
-TARGET_2ND_CPU_ABI2 := armeabi
-TARGET_2ND_CPU_VARIANT := generic
+TARGET_2ND_ARCH :=
+TARGET_2ND_ARCH_VARIANT :=
+TARGET_2ND_CPU_ABI :=
+TARGET_2ND_CPU_ABI2 :=
+TARGET_2ND_CPU_VARIANT :=
 TARGET_USES_64_BIT_BINDER := true
 TARGET_KERNEL_ARCH := arm64
 TARGET_KERNEL_HEADER_ARCH := arm64
@@ -76,7 +75,7 @@ TW_DEFAULT_BRIGHTNESS := 162
 TW_NO_SCREEN_BLANK :=
 TW_NO_REBOOT_BOOTLOADER := true
 TW_HAS_DOWNLOAD_MODE := true
-TW_EXCLUDE_DEFAULT_USB_INIT := false
+TW_EXCLUDE_DEFAULT_USB_INIT := true
 TARGET_RECOVERY_INITRC :=
 TW_EXCLUDE_VENDOR_BOOT_SERVICE := true
 # Do not set TARGET_GLOBAL_* or HOST_GLOBAL_* here. Omni 8.1 ckati compares

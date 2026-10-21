@@ -50,7 +50,7 @@ jobs:
           echo "매니페스트 주소: $MANIFEST_URL"
           echo "매니페스트 브랜치: $MANIFEST_BRANCH"
           echo "빌드 대상: ${BUILD_TARGET}image"
-          echo "리커버리 ABI: arm64-v8a, 순정 시스템: armeabi-v7a, 커널 슬롯: Image"
+          echo "리커버리 ABI: armeabi-v7a (순정 init 과 같은 ELF32), 커널 슬롯: Image"
           echo "같은 브랜치에 이미 실행이 있으면 이전 실행은 취소됩니다. 그 취소는 디스크 오류가 아닙니다."
           echo "::endgroup::"
 
@@ -338,26 +338,28 @@ jobs:
           fi
 
           ROOT="out/target/product/${CODENAME}/recovery/root"
-          if [ ! -e "$ROOT/sbin/linker64" ]; then
+          if [ ! -e "$ROOT/sbin/linker" ]; then
             src=$(find "out/target/product/${CODENAME}/system" "out/target/product/${CODENAME}/obj" \
-              -name linker64 -type f 2>/dev/null | head -1 || true)
-            if [ -z "$src" ]; then
-              echo "::error::linker64 가 없습니다. init 이 실행되지 않아 화면과 adb가 같이 멈춥니다."
-              find "out/target/product/${CODENAME}" -name 'linker*' | head -20 || true
-              exit 1
-            fi
-            mkdir -p "$ROOT/sbin"
-            cp -a "$src" "$ROOT/sbin/linker64"
-            echo "linker64 를 램디스크에 넣었습니다: $src"
-            mka BOARD_USES_RECOVERY_AS_BOOT=false "${BUILD_TARGET}image" -j"$(nproc)" 2>&1 | tee -a "$GITHUB_WORKSPACE/build.log"
-            rc=${PIPESTATUS[0]}
-            if [ "$rc" != "0" ]; then
-              echo "::error::linker64 반영 후 재빌드 실패 (종료 코드 $rc)"
-              exit "$rc"
+              -name linker -type f ! -name linker64 2>/dev/null | head -1 || true)
+            if [ -n "$src" ]; then
+              mkdir -p "$ROOT/sbin"
+              cp -a "$src" "$ROOT/sbin/linker"
+              echo "linker 를 램디스크에 넣었습니다: $src"
+              mka BOARD_USES_RECOVERY_AS_BOOT=false "${BUILD_TARGET}image" -j"$(nproc)" 2>&1 | tee -a "$GITHUB_WORKSPACE/build.log"
+              rc=${PIPESTATUS[0]}
+              if [ "$rc" != "0" ]; then
+                echo "::error::linker 반영 후 재빌드 실패 (종료 코드 $rc)"
+                exit "$rc"
+              fi
             fi
           fi
+          if ! file "$ROOT/init" | grep -q 'ELF 32-bit'; then
+            echo "::error::init 이 ELF32 가 아닙니다. 64비트 init 은 이 커널에서 5초마다 재부팅됩니다."
+            file "$ROOT/init" "$ROOT/sbin/recovery" "$ROOT/sbin/adbd" || true
+            exit 1
+          fi
           missing=0
-          for f in init sbin/linker64 sbin/adbd sbin/recovery; do
+          for f in init sbin/adbd sbin/recovery; do
             if [ ! -e "$ROOT/$f" ]; then
               echo "::error::램디스크에 $f 가 없습니다."
               missing=1
@@ -395,7 +397,9 @@ jobs:
               # ramdisk length and this bootloader rejects it ("invalid ramdisk length").
               swaps = (
                   (b'/system/bin/linker64\x00', b'/sbin/linker64\x00' + b'\x00' * 6),
+                  (b'/system/bin/linker\x00', b'/sbin/linker\x00' + b'\x00' * 6),
                   (b'/system/lib64\x00', b'/sbin\x00' + b'\x00' * 8),
+                  (b'/system/lib\x00', b'/sbin\x00' + b'\x00' * 6),
               )
               count = 0
               for old, new in swaps:
