@@ -119,9 +119,18 @@ jobs:
         timeout-minutes: 120
         working-directory: ${{ env.WS }}
         run: |
+          mkdir -p .repo/local_manifests
+          cat > .repo/local_manifests/remove-slang.xml <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <manifest>
+            <remove-project name="platform/frameworks/compile/slang"/>
+          </manifest>
+          EOF
           ok=0
           # Stalled git fetches used to sit here until the job limit. Each attempt
           # is capped, and a dead connection is dropped after 30s below 1KB/s.
+          # slang is the RenderScript compiler. Recovery does not build it, and
+          # googlesource returns 503 for the android-8.1.0_r51 tag.
           for spec in "4 50m" "2 40m"; do
             set -- $spec
             echo "repo sync -j$1 제한시간 $2"
