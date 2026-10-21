@@ -258,6 +258,8 @@ jobs:
             cat "${GITHUB_WORKSPACE}/overrides/BoardConfig.mk"
           } >> BoardConfig.mk
           echo "overrides/BoardConfig.mk 를 적용했습니다."
+          mkdir -p sepolicy
+          cp "${GITHUB_WORKSPACE}/overrides/sepolicy/permissive.te" sepolicy/permissive.te
 
           if [ ! -f "${GITHUB_WORKSPACE}/overrides/init.recovery.samsungexynos7870.rc" ]; then
             echo "::error::overrides/init.recovery.samsungexynos7870.rc 가 없습니다."
@@ -282,6 +284,8 @@ jobs:
             echo "TW_MAX_BRIGHTNESS := 306"
             echo "TW_DEFAULT_BRIGHTNESS := 162"
             echo "TW_NO_SCREEN_BLANK := true"
+            echo "RECOVERY_GRAPHICS_FORCE_USE_LINELENGTH := true"
+            echo "RECOVERY_GRAPHICS_FORCE_SINGLE_BUFFER := true"
           } >> "$MK"
 
           echo "---- 아키텍처 설정 ----"

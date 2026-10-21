@@ -16,6 +16,7 @@ on early-init
     setprop ro.adb.nonblocking_ffs 0
 
 on init
+    write /sys/fs/selinux/enforce 0
     write /sys/devices/virtual/sec/sec_wdt/wdt_control 0
     write /sys/class/sec/sec_wdt/wdt_control 0
     write /proc/sys/kernel/panic 0
@@ -25,6 +26,7 @@ on init
     start watchdogd
 
 on fs
+    write /sys/fs/selinux/enforce 0
     write /sys/devices/virtual/sec/sec_wdt/wdt_control 0
     write /proc/sys/kernel/panic_on_oops 0
     mount functionfs adb /dev/usb-ffs/adb uid=2000,gid=2000,rmode=0770,fmode=0660
@@ -43,6 +45,7 @@ on fs
     start adbd
 
 on boot
+    write /sys/fs/selinux/enforce 0
     setprop sys.usb.config adb
     start adbd
 

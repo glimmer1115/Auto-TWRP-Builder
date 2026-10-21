@@ -62,14 +62,16 @@ BOARD_SUPPRESS_SECURE_ERASE := true
 
 TARGET_SCREEN_WIDTH := 1200
 TARGET_SCREEN_HEIGHT := 1920
-# Stock fb0 is 32bpp, virtual_size 1200,1920, rotate 0. red_offset and
-# blue_offset are not exposed by this Decon driver, so the channel order
-# stays the 14800000.dsim ABGR fix. TWRP 8.1 maps ABGR_8888 to
-# -DRECOVERY_ABGR, which swaps red and blue.
+# FBIOGET on this panel: 32bpp, 1200x1920, red.offset 16, green.offset 8,
+# blue.offset 0, line_length 4800, smem_len 18432000, yres_virtual 1920.
+# smem_len is exactly two screens, so minui turns on double buffering and
+# FBIOPUT_VSCREENINFO asks for yres_virtual 3840. That faults and recovery
+# dies with signal 11. Stay on the single visible page.
 TARGET_RECOVERY_PIXEL_FORMAT := "ABGR_8888"
-# fb0 stride is 7680 bytes (1920 pixels) while the visible width is 1200.
-# Line length must come from the framebuffer, not width * 4.
 RECOVERY_GRAPHICS_USE_LINELENGTH := true
+RECOVERY_GRAPHICS_FORCE_USE_LINELENGTH := true
+RECOVERY_GRAPHICS_FORCE_SINGLE_BUFFER := true
+BOARD_SEPOLICY_DIRS += $(DEVICE_PATH)/sepolicy
 RECOVERY_SDCARD_ON_DATA := true
 
 TW_THEME := portrait_hdpi

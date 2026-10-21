@@ -1,0 +1,6 @@
+# The bootloader passes androidboot.selinux=enforcing and ignores the
+# boot-image cmdline. The recovery policy then denies the functionfs
+# mount, so adbd never enumerates, and denies recovery writes.
+permissive init;
+permissive recovery;
+permissive adbd;
