@@ -264,6 +264,9 @@ jobs:
             exit 1
           fi
           cp "${GITHUB_WORKSPACE}/overrides/init.recovery.samsungexynos7870.rc" recovery/root/
+          mkdir -p recovery/root/sbin
+          cp "${GITHUB_WORKSPACE}/overrides/watchdogd.sh" recovery/root/sbin/watchdogd.sh
+          chmod 755 recovery/root/sbin/watchdogd.sh
           RC="${ANDROID_ROOT}/bootable/recovery/etc/init.rc"
           if [ ! -f "$RC" ]; then
             echo "::error::init.rc 를 찾지 못했습니다: $RC"
@@ -387,6 +390,74 @@ jobs:
           PART_SIZE = 39845888
           TRAILER = b'SEANDROIDENFORCE'
 
+          def retarget_linker(raw):
+              # Same-length swaps. A short replacement would shift the ELF and the cpio sizes.
+              swaps = (
+                  (b'/system/bin/linker64\x00', b'/sbin/linker64\x00' + b'\x00' * 6),
+                  (b'/system/lib64\x00', b'/sbin\x00' + b'\x00' * 8),
+              )
+              count = 0
+              for old, new in swaps:
+                  if len(old) != len(new):
+                      sys.exit('링커 경로 길이가 다릅니다: %d %d' % (len(old), len(new)))
+                  found = raw.count(old)
+                  raw = raw.replace(old, new)
+                  count += found
+              print('링커 경로 수정 횟수', count)
+              return raw
+
+          def cpio_fields(hdr):
+              return [int(hdr[6 + 8 * k:6 + 8 * (k + 1)], 16) for k in range(13)]
+
+          def walk_cpio(raw):
+              i = 0
+              linker = None
+              have_sys = False
+              have_sbin = False
+              while i + 110 <= len(raw):
+                  if raw[i:i + 6] not in (b'070701', b'070702'):
+                      break
+                  fields = cpio_fields(raw[i:i + 110])
+                  namesize, filesize = fields[11], fields[6]
+                  name_start = i + 110
+                  name = raw[name_start:name_start + namesize].split(b'\x00', 1)[0]
+                  data_start = (name_start + namesize + 3) & ~3
+                  data = raw[data_start:data_start + filesize]
+                  if name == b'TRAILER!!!':
+                      return i, linker, have_sys, have_sbin
+                  if name == b'sbin/linker64':
+                      linker = data
+                      have_sbin = True
+                  elif name == b'system/bin/linker64':
+                      linker = data
+                      have_sys = True
+                  i = (data_start + filesize + 3) & ~3
+              sys.exit('cpio TRAILER 를 찾지 못했습니다.')
+
+          def pack_entry(name, mode, data):
+              name_b = name.encode() + b'\x00'
+              fields = [0, mode, 0, 0, 1, 0, len(data), 0, 0, 0, 0, len(name_b), 0]
+              hdr = b'070701' + b''.join(('%08X' % (f & 0xFFFFFFFF)).encode() for f in fields)
+              name_pad = (4 - ((110 + len(name_b)) % 4)) % 4
+              data_pad = (4 - (len(data) % 4)) % 4
+              return hdr + name_b + (b'\x00' * name_pad) + data + (b'\x00' * data_pad)
+
+          def prepare_ramdisk(raw):
+              raw = retarget_linker(raw)
+              trailer, linker, have_sys, have_sbin = walk_cpio(raw)
+              if linker is None:
+                  sys.exit('램디스크에 linker64 가 없습니다. init 이 실행되지 않습니다.')
+              extra = b''
+              if not have_sbin:
+                  extra += pack_entry('sbin/linker64', 0o100755, linker)
+                  print('sbin/linker64 를 추가했습니다.')
+              if not have_sys:
+                  extra += pack_entry('system/bin/linker64', 0o100755, linker)
+                  print('system/bin/linker64 를 추가했습니다.')
+              if extra:
+                  raw = raw[:trailer] + extra + raw[trailer:]
+              return raw
+
           def as_gzip_ramdisk(blob):
               if blob[:2] == b'\x1f\x8b':
                   raw = gzip.decompress(blob)
@@ -417,6 +488,7 @@ jobs:
                           break
               if raw is None or raw[:6] not in (b'070701', b'070702'):
                   sys.exit('램디스크가 gzip cpio 가 아닙니다. 오레오 부트로더는 invalid ramdisk 로 멈춥니다.')
+              raw = prepare_ramdisk(raw)
               out = gzip.compress(raw, compresslevel=9, mtime=0)
               print('gzip 램디스크 바이트', len(out))
               return out

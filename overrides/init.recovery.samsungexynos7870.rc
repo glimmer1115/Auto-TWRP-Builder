@@ -1,20 +1,35 @@
-# SM-T583 (gtaxladwifikx) recovery USB.
-# Backlight is owned by BoardConfig TW_BRIGHTNESS_PATH
-# (/sys/devices/14800000.dsim/backlight/panel/brightness). Do not write it here.
-# Exynos 7870 / 3.18 stock gadget is legacy android_usb, not configfs.
-# This file starts adbd on fs. TWRP's own USB init stays enabled.
+# SM-T583 (gtaxladwifikx) recovery bring-up.
+# A 5-7s backlight blink is the Exynos watchdog resetting recovery
+# before adbd or the UI can stay up. Stop that before USB setup.
+# Backlight level stays with TW_BRIGHTNESS_PATH. Do not write it here.
 
 on early-init
+    write /sys/fs/selinux/enforce 0
+    write /sys/devices/virtual/sec/sec_wdt/wdt_control 0
+    write /sys/class/sec/sec_wdt/wdt_control 0
+    write /sys/devices/platform/s3c2410-wdt/wdt_disable 1
+    write /proc/sys/kernel/panic 0
+    write /proc/sys/kernel/panic_on_oops 0
+    write /proc/sys/kernel/hung_task_timeout_secs 0
     setprop sys.usb.configfs 0
     setprop sys.usb.ffs.aio_compat 1
     setprop persist.adb.nonblocking_ffs 0
     setprop ro.adb.nonblocking_ffs 0
+    start watchdogd
 
 on init
+    write /sys/devices/virtual/sec/sec_wdt/wdt_control 0
+    write /sys/class/sec/sec_wdt/wdt_control 0
+    write /proc/sys/kernel/panic 0
+    write /proc/sys/kernel/panic_on_oops 0
     mkdir /dev/usb-ffs 0770 shell shell
     mkdir /dev/usb-ffs/adb 0770 shell shell
+    start watchdogd
+    start adbd
 
 on fs
+    write /sys/devices/virtual/sec/sec_wdt/wdt_control 0
+    write /proc/sys/kernel/panic_on_oops 0
     mount functionfs adb /dev/usb-ffs/adb uid=2000,gid=2000,rmode=0770,fmode=0660
     setprop sys.usb.ffs.ready 1
     write /sys/class/android_usb/android0/enable 0
@@ -27,6 +42,7 @@ on fs
     write /sys/class/android_usb/android0/iSerial ${ro.serialno}
     setprop sys.usb.config adb
     write /sys/class/android_usb/android0/enable 1
+    start watchdogd
     start adbd
 
 on boot
@@ -42,3 +58,7 @@ on property:sys.usb.config=adb
     write /sys/class/android_usb/android0/functions adb
     write /sys/class/android_usb/android0/enable 1
     start adbd
+
+service watchdogd /sbin/watchdogd.sh
+    class core
+    seclabel u:r:recovery:s0
