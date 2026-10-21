@@ -80,9 +80,13 @@ jobs:
             libx11-dev tree lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc bc ccache \
             lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libxml2 \
             lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp \
-            qemu-user-static libncurses5 python3 python3-pip python-is-python3 cpio wget file \
+            qemu-user-static libncurses5 python2 python3 python3-pip cpio wget file \
             unzip zip git curl
           python3 -m pip install --user -U twrpdtgen
+          # Omni 8.1 still calls print without parentheses. python-is-python3
+          # makes those scripts fail with SyntaxError before recovery is linked.
+          sudo ln -sfn /usr/bin/python2 /usr/local/bin/python
+          python -c 'import sys; assert sys.version_info[0] == 2, sys.version'
 
       - name: Install OpenJDK
         uses: actions/setup-java@v6
@@ -296,6 +300,11 @@ jobs:
           # Close stdin first. lunch without a resolved product reads a menu
           # and will block until the job timeout on a runner with no TTY.
           exec 0</dev/null
+          if ! python -c 'import sys; raise SystemExit(0 if sys.version_info[0] == 2 else 1)'; then
+            echo "::error::빌드용 python 이 Python 2가 아닙니다. Omni 8.1 스크립트가 print 문법에서 멈춥니다."
+            python --version || true
+            exit 1
+          fi
           set +e
           export ALLOW_MISSING_DEPENDENCIES=true
           export LC_ALL=C
