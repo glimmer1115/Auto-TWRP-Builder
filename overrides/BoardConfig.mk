@@ -94,5 +94,13 @@ TW_HAS_DOWNLOAD_MODE := true
 TW_EXCLUDE_DEFAULT_USB_INIT := true
 TARGET_RECOVERY_INITRC :=
 TW_EXCLUDE_VENDOR_BOOT_SERVICE := true
+# twrpdtgen turns on cryptfs when the stock fstab says encryptable.
+# After the fstab mounts, cryptfs_get_password_type faults this Oreo
+# userdata before gui_loadResources can draw. The UI has to come up first.
+TW_INCLUDE_CRYPTO := false
+TW_INCLUDE_JB_CRYPTO := false
+TW_INCLUDE_L_CRYPTO := false
+TW_INCLUDE_CRYPTO_FBE := false
+TW_CRYPTO_USE_SYSTEM_VOLD := false
 # Do not set TARGET_GLOBAL_* or HOST_GLOBAL_* here. Omni 8.1 ckati compares
 # those lists with Soong and stops with "Soong variable check failed."

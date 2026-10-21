@@ -115,9 +115,26 @@ def self_test():
             raise SystemExit("language load or fopen kmsg remains")
         if "open(\"/dev/kmsg\", O_WRONLY | O_CLOEXEC)" not in twrp:
             raise SystemExit("kmsg open flags missing")
-        for marker in ("sm_beacon(\"151\")", "sm_beacon(\"153\")", "sm_beacon(\"154\")", "sm_beacon(\"155\")", "sm_beacon(\"156\")", "sm_beacon(\"157\")", "signal(SIGSEGV, sm_fault)", "/cache/recovery/sm-stage"):
+        for marker in ("sm_beacon(\"151\")", "sm_beacon(\"149\")", "sm_beacon(\"153\")", "sm_beacon(\"154\")", "sm_beacon(\"155\")", "sm_beacon(\"156\")", "sm_beacon(\"157\")", "sm_beacon(\"158\")", "signal(SIGSEGV, sm_fault)", "/cache/recovery/sm-stage"):
             if marker not in twrp:
                 raise SystemExit("missing " + marker)
+        tw90_path = r"C:\twrp-879923a\twrp-90.cpp"
+        pm90_path = r"C:\twrp-879923a\pm90.cpp"
+        if __import__("os").path.exists(tw90_path):
+            tw90 = patch_twrp(open(tw90_path, encoding="utf-8").read())
+            if "Begin SAR detection" in tw90 or "SarPartitionManager" in tw90:
+                raise SystemExit("android-9.0 SAR probe remains")
+            if "SM-T583 stage skip-sar" not in tw90 or "sm_beacon(\"158\")" not in tw90 or "sm_beacon(\"149\")" not in tw90:
+                raise SystemExit("android-9.0 fstab beacons missing")
+            if "Process_Fstab(fstab_filename, 1, 0)" not in tw90:
+                raise SystemExit("real fstab pass was removed")
+        if __import__("os").path.exists(pm90_path):
+            pm90 = patch_partition(open(pm90_path, encoding="utf-8").read())
+            if "Decrypt_Adopted();" in pm90.split("UnMount_Main_Partitions", 1)[0].split("skip adopted", 1)[-1]:
+                raise SystemExit("adopted decrypt call remains")
+            if "SM-T583: skip partition size scan" not in pm90 or "SM-T583: skip adopted storage decrypt" not in pm90:
+                raise SystemExit("partition tail was not patched")
+            print("android-9.0: SAR probe removed, fstab tail no longer decrypts or scans sizes")
         if "gui_startPage(\"system_readonly\"" in twrp:
             raise SystemExit("system_readonly page still starts")
         data = open(r"C:\twrp-879923a\data.cpp", encoding="utf-8").read()
@@ -275,7 +292,62 @@ def patch_twrp(text):
         if old not in text:
             raise SystemExit("twrp.cpp 에서 다음을 찾지 못했습니다: " + old.strip())
         text = text.replace(old, new, 1)
-    return text
+    text = skip_sar(text)
+    return mark_fstab(text)
+
+
+def skip_sar(text):
+    start = text.find("\t// Begin SAR detection\n")
+    end = text.find("\t// End SAR detection\n")
+    if start < 0 or end < 0:
+        return text
+    end += len("\t// End SAR detection\n")
+    # Oreo has no system-as-root. That probe still walks the fstab and
+    # the following pass faults before gui_loadResources returns.
+    note = (
+        "\t// SM-T583 is Oreo and has no system-as-root partition.\n"
+        "\tsm_kmsg(\"SM-T583 stage skip-sar\");\n"
+    )
+    return text[:start] + note + text[end:]
+
+
+def mark_fstab(text):
+    calls = (
+        "\tif (!PartitionManager.Process_Fstab(fstab_filename, 1, 0)) {\n",
+        "\tif (!PartitionManager.Process_Fstab(fstab_filename, 1)) {\n",
+    )
+    for call in calls:
+        if call in text:
+            text = text.replace(call, "\tsm_beacon(\"158\");\n" + call, 1)
+            break
+    else:
+        raise SystemExit("Process_Fstab 호출을 찾지 못했습니다.")
+    log = "\tPartitionManager.Output_Partition_Logging();\n"
+    if log not in text:
+        raise SystemExit("Output_Partition_Logging 을 찾지 못했습니다.")
+    return text.replace(log, "\tsm_beacon(\"149\");\n" + log, 1)
+
+
+PART_OLD = (
+    "\t\tDecrypt_Adopted();\n"
+    "\t}\n"
+    "#endif\n"
+    "\tUpdate_System_Details();\n"
+    "\tUnMount_Main_Partitions();\n"
+)
+PART_NEW = (
+    "\t\tLOGINFO(\"SM-T583: skip adopted storage decrypt\\n\");\n"
+    "\t}\n"
+    "#endif\n"
+    "\tLOGINFO(\"SM-T583: skip partition size scan\\n\");\n"
+    "\tUnMount_Main_Partitions();\n"
+)
+
+
+def patch_partition(text):
+    if PART_OLD not in text:
+        raise SystemExit("fstab 처리 끝의 암호 해제와 용량 검사를 찾지 못했습니다.")
+    return text.replace(PART_OLD, PART_NEW, 1)
 
 
 DATA_OLD = (
@@ -387,6 +459,7 @@ def patch_crash(root):
         os.path.join(root, "gui", "pages.cpp"): patch_language,
         os.path.join(root, "twrp.cpp"): patch_twrp,
         os.path.join(root, "data.cpp"): patch_data,
+        os.path.join(root, "partitionmanager.cpp"): patch_partition,
     }
     for path, fn in files.items():
         if not os.path.exists(path):

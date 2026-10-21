@@ -468,6 +468,14 @@ jobs:
             echo "::error::설정 로드 뒤 밝기 복원이 그대로입니다."
             exit 1
           fi
+          if ! grep -a -q 'SM-T583 stage skip-sar' "$ROOT/sbin/recovery"; then
+            echo "::error::시스템 루트 탐색이 그대로입니다."
+            exit 1
+          fi
+          if ! grep -a -q 'SM-T583: skip partition size scan' "$ROOT/sbin/recovery"; then
+            echo "::error::테마 로드 전 파티션 용량 검사가 그대로입니다."
+            exit 1
+          fi
           if grep -q 'restart adbd' "$ROOT/init.rc"; then
             echo "::error::init.rc 가 adbd 를 다시 죽입니다."
             exit 1
