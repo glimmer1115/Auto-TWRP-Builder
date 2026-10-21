@@ -437,6 +437,14 @@ jobs:
             echo "::error::빈 테마 포인터 가드가 recovery 에 없습니다."
             exit 1
           fi
+          if ! grep -a -q 'SM-T583 stage skip-language' "$ROOT/sbin/recovery"; then
+            echo "::error::부팅 중 언어 로드가 그대로입니다."
+            exit 1
+          fi
+          if ! grep -a -q 'SM-T583: skip late brightness restore' "$ROOT/sbin/recovery"; then
+            echo "::error::설정 로드 뒤 밝기 복원이 그대로입니다."
+            exit 1
+          fi
           if grep -q 'restart adbd' "$ROOT/init.rc"; then
             echo "::error::init.rc 가 adbd 를 다시 죽입니다."
             exit 1

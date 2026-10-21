@@ -97,12 +97,22 @@ def self_test():
             raise SystemExit("language load still dereferences a null theme")
         twrp = open(r"C:\twrp-879923a\twrp.cpp", encoding="utf-8").read()
         twrp = patch_twrp(twrp)
-        for marker in ("SM-T583 stage after-gui-init", "SM-T583 stage resources failed", "SM-T583 stage gui-start failed"):
+        for marker in ("SM-T583 stage after-gui-init", "SM-T583 stage resources failed", "SM-T583 stage skip-language", "SM-T583 stage gui-start failed"):
             if marker not in twrp:
                 raise SystemExit("missing " + marker)
-        if "\tgui_start();\n" in twrp:
-            raise SystemExit("gui_start still ignores failure")
-        print("crash path: null theme no longer segfaults, stages go to kmsg")
+        if "PageManager::LoadLanguage" in twrp or "fopen(\"/dev/kmsg\"" in twrp:
+            raise SystemExit("language load or fopen kmsg remains")
+        if "open(\"/dev/kmsg\", O_WRONLY | O_CLOEXEC)" not in twrp:
+            raise SystemExit("kmsg open flags missing")
+        data = open(r"C:\twrp-879923a\data.cpp", encoding="utf-8").read()
+        data = patch_data(data)
+        if "skip late brightness restore" not in data:
+            raise SystemExit("late brightness restore remains")
+        if "PartitionManager.Mount_All_Storage();\n\tupdate_tz_environment_variables();\n\tTWFunc::Set_Brightness" in data:
+            raise SystemExit("late Set_Brightness still follows storage mount")
+        if data.count("Set_Brightness(GetStrValue(\"tw_brightness\"))") != 1:
+            raise SystemExit("startup brightness write was removed")
+        print("crash path: language load and late brightness write removed, kmsg uses open")
     print("self-test ok")
 
 
@@ -154,10 +164,11 @@ def patch_language(text):
     insert = (
         needle
         + "\t{\n"
-        + "\t\tFILE* kmsg = fopen(\"/dev/kmsg\", \"w\");\n"
-        + "\t\tif (kmsg) {\n"
-        + "\t\t\tfputs(\"SM-T583 stage language\\n\", kmsg);\n"
-        + "\t\t\tfclose(kmsg);\n"
+        + "\t\tint kmsg = open(\"/dev/kmsg\", O_WRONLY | O_CLOEXEC);\n"
+        + "\t\tif (kmsg >= 0) {\n"
+        + "\t\t\tconst char *msg = \"SM-T583 stage language\\n\";\n"
+        + "\t\t\twrite(kmsg, msg, 23);\n"
+        + "\t\t\tclose(kmsg);\n"
         + "\t\t}\n"
         + "\t}\n"
     )
@@ -169,17 +180,22 @@ def patch_language(text):
 def patch_twrp(text):
     helper = (
         "static void sm_kmsg(const char *text) {\n"
-        "\tFILE *fp = fopen(\"/dev/kmsg\", \"w\");\n"
-        "\tif (fp) {\n"
-        "\t\tfputs(text, fp);\n"
-        "\t\tfputc('\\n', fp);\n"
-        "\t\tfclose(fp);\n"
+        "\tint fd = open(\"/dev/kmsg\", O_WRONLY | O_CLOEXEC);\n"
+        "\tif (fd >= 0) {\n"
+        "\t\tconst char *p = text;\n"
+        "\t\twhile (*p)\n"
+        "\t\t\tp++;\n"
+        "\t\twrite(fd, text, p - text);\n"
+        "\t\twrite(fd, \"\\n\", 1);\n"
+        "\t\tclose(fd);\n"
         "\t}\n"
         "}\n\n"
     )
     anchor = "static void Print_Prop(const char *key, const char *name, void *cookie) {\n"
     if anchor not in text:
         raise SystemExit("twrp.cpp Print_Prop 을 찾지 못했습니다.")
+    if "#include <fcntl.h>\n" not in text:
+        text = text.replace("#include <unistd.h>\n", "#include <unistd.h>\n#include <fcntl.h>\n", 1)
     if "static void sm_kmsg(" not in text:
         text = text.replace(anchor, helper + anchor, 1)
     replacements = (
@@ -193,8 +209,7 @@ def patch_twrp(text):
         ),
         (
             "\tPageManager::LoadLanguage(DataManager::GetStrValue(\"tw_language\"));\n",
-            "\tsm_kmsg(\"SM-T583 stage before-language\");\n"
-            "\tPageManager::LoadLanguage(DataManager::GetStrValue(\"tw_language\"));\n",
+            "\tsm_kmsg(\"SM-T583 stage skip-language\");\n",
         ),
         (
             "\tgui_start();\n",
@@ -213,12 +228,31 @@ def patch_twrp(text):
     return text
 
 
+DATA_OLD = (
+    "\tPartitionManager.Mount_All_Storage();\n"
+    "\tupdate_tz_environment_variables();\n"
+    "\tTWFunc::Set_Brightness(GetStrValue(\"tw_brightness\"));\n"
+)
+DATA_NEW = (
+    "\tPartitionManager.Mount_All_Storage();\n"
+    "\tupdate_tz_environment_variables();\n"
+    "\tLOGINFO(\"SM-T583: skip late brightness restore\\n\");\n"
+)
+
+
+def patch_data(text):
+    if DATA_OLD not in text:
+        raise SystemExit("ReadSettingsFile 의 늦은 밝기 복원을 찾지 못했습니다.")
+    return text.replace(DATA_OLD, DATA_NEW, 1)
+
+
 def patch_crash(root):
     import os
     files = {
         os.path.join(root, "gui", "gui.cpp"): patch_lookup,
         os.path.join(root, "gui", "pages.cpp"): patch_language,
         os.path.join(root, "twrp.cpp"): patch_twrp,
+        os.path.join(root, "data.cpp"): patch_data,
     }
     for path, fn in files.items():
         if not os.path.exists(path):
