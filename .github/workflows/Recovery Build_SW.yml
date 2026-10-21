@@ -445,6 +445,10 @@ jobs:
             echo "::error::단계 밝기 표시가 recovery 에 없습니다."
             exit 1
           fi
+          if ! grep -a -q -r 'SM-T583 skip splash' "$ROOT"; then
+            echo "::error::스플래시 화면이 그대로입니다."
+            exit 1
+          fi
           if ! grep -a -q 'SM-T583: skip late brightness restore' "$ROOT/sbin/recovery"; then
             echo "::error::설정 로드 뒤 밝기 복원이 그대로입니다."
             exit 1

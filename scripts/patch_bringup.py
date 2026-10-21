@@ -87,10 +87,16 @@ def self_test():
     print("init.rc: restart adbd removed")
     gui = open(r"C:\twrp-879923a\gui.cpp", encoding="utf-8").read() if __import__("os").path.exists(r"C:\twrp-879923a\gui.cpp") else ""
     if gui:
-        got = patch_lookup(gui)
+        got = patch_gui_cpp(gui)
         body = got.split("std::string gui_lookup", 1)[1].split("gui_init", 1)[0]
         if "GetResources() == NULL" not in body or body.find("== NULL") > body.find("FindString"):
             raise SystemExit("lookup null check missing")
+        init_body = got.split("int gui_init(void)", 1)[1].split("int gui_loadResources", 1)[0]
+        if "LoadPackage(\"splash\"" in init_body or "flip();" in init_body:
+            raise SystemExit("splash render remains")
+        for marker in ("write(fd, \"150\", 3)", "write(fd, \"152\", 3)", "write(fd, \"159\", 3)", "SM-T583 skip splash"):
+            if marker not in init_body:
+                raise SystemExit("missing " + marker)
         pages = open(r"C:\twrp-879923a\pages.cpp", encoding="utf-8").read()
         pages = patch_language(pages)
         if "mCurrentSet->LoadLanguage(xmlFile, NULL);" in pages.split("theme is not loaded", 1)[0].split("LoadLanguage(string", 1)[1]:
@@ -285,10 +291,66 @@ def patch_data(text):
     return text.replace(DATA_OLD, DATA_NEW, 1)
 
 
+GUI_INIT_OLD = (
+    "\tgr_init();\n"
+    "\tTWFunc::Set_Brightness(DataManager::GetStrValue(\"tw_brightness\"));\n"
+    "\n"
+    "\t// load and show splash screen\n"
+    "\tif (PageManager::LoadPackage(\"splash\", TWRES \"splash.xml\", \"splash\")) {\n"
+    "\t\tLOGERR(\"Failed to load splash screen XML.\\n\");\n"
+    "\t}\n"
+    "\telse {\n"
+    "\t\tPageManager::SelectPackage(\"splash\");\n"
+    "\t\tPageManager::Render();\n"
+    "\t\tflip();\n"
+    "\t\tPageManager::ReleasePackage(\"splash\");\n"
+    "\t}\n"
+    "\n"
+    "\tev_init();\n"
+)
+GUI_INIT_NEW = (
+    "\t{\n"
+    "\t\tint fd = open(\"/sys/devices/14800000.dsim/backlight/panel/brightness\", O_WRONLY | O_CLOEXEC);\n"
+    "\t\tif (fd >= 0) {\n"
+    "\t\t\twrite(fd, \"150\", 3);\n"
+    "\t\t\tclose(fd);\n"
+    "\t\t}\n"
+    "\t}\n"
+    "\tgr_init();\n"
+    "\tTWFunc::Set_Brightness(DataManager::GetStrValue(\"tw_brightness\"));\n"
+    "\tLOGINFO(\"SM-T583 skip splash\\n\");\n"
+    "\t{\n"
+    "\t\tint fd = open(\"/sys/devices/14800000.dsim/backlight/panel/brightness\", O_WRONLY | O_CLOEXEC);\n"
+    "\t\tif (fd >= 0) {\n"
+    "\t\t\twrite(fd, \"152\", 3);\n"
+    "\t\t\tclose(fd);\n"
+    "\t\t}\n"
+    "\t}\n"
+    "\tev_init();\n"
+    "\t{\n"
+    "\t\tint fd = open(\"/sys/devices/14800000.dsim/backlight/panel/brightness\", O_WRONLY | O_CLOEXEC);\n"
+    "\t\tif (fd >= 0) {\n"
+    "\t\t\twrite(fd, \"159\", 3);\n"
+    "\t\t\tclose(fd);\n"
+    "\t\t}\n"
+    "\t}\n"
+)
+
+
+def patch_gui_init(text):
+    if GUI_INIT_OLD not in text:
+        raise SystemExit("gui_init 의 스플래시 화면을 찾지 못했습니다.")
+    return text.replace(GUI_INIT_OLD, GUI_INIT_NEW, 1)
+
+
+def patch_gui_cpp(text):
+    return patch_gui_init(patch_lookup(text))
+
+
 def patch_crash(root):
     import os
     files = {
-        os.path.join(root, "gui", "gui.cpp"): patch_lookup,
+        os.path.join(root, "gui", "gui.cpp"): patch_gui_cpp,
         os.path.join(root, "gui", "pages.cpp"): patch_language,
         os.path.join(root, "twrp.cpp"): patch_twrp,
         os.path.join(root, "data.cpp"): patch_data,
