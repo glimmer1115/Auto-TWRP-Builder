@@ -308,6 +308,7 @@ jobs:
             echo "TW_MAX_BRIGHTNESS := 306"
             echo "TW_DEFAULT_BRIGHTNESS := 162"
             echo "TW_NO_SCREEN_BLANK := true"
+            echo "TW_NO_SCREEN_TIMEOUT := true"
             echo "RECOVERY_GRAPHICS_FORCE_USE_LINELENGTH := true"
             echo "RECOVERY_GRAPHICS_FORCE_SINGLE_BUFFER := true"
           } >> "$MK"
@@ -415,6 +416,10 @@ jobs:
           fi
           if grep -a -q 'cannot open LCD backlight' "$lib"; then
             echo "::error::fbdev_blank 가 밝기 0 을 쓰도록 컴파일되었습니다."
+            exit 1
+          fi
+          if grep -a -q '/sbin/postscreenblank.sh' "$ROOT/sbin/recovery"; then
+            echo "::error::blanktimer 가 아직 밝기 0 을 씁니다. TW_NO_SCREEN_TIMEOUT 이 libguitwrp 에 없습니다."
             exit 1
           fi
 
