@@ -7,8 +7,7 @@
 #   ro.product.cpu.abi=armeabi-v7a
 #   ro.product.cpu.abilist64=        (empty)
 # Recovery userspace (init, adbd, recovery) is ELF32 EM_ARM.
-# Android 11 rejects armv7-a-neon together with cortex-a53, so the 32-bit
-# variant is armv8-a.
+# This tree is Omni TWRP 8.1. That release accepts armv7-a-neon with cortex-a53.
 
 TARGET_BOARD_PLATFORM := exynos5
 TARGET_SOC := exynos7870
@@ -17,7 +16,7 @@ TARGET_NO_BOOTLOADER := true
 TARGET_NO_RADIOIMAGE := true
 
 TARGET_ARCH := arm
-TARGET_ARCH_VARIANT := armv8-a
+TARGET_ARCH_VARIANT := armv7-a-neon
 TARGET_CPU_ABI := armeabi-v7a
 TARGET_CPU_ABI2 := armeabi
 TARGET_CPU_VARIANT := cortex-a53
@@ -77,5 +76,4 @@ TW_DEFAULT_BRIGHTNESS := 162
 TW_NO_SCREEN_BLANK :=
 TW_NO_REBOOT_BOOTLOADER := true
 TW_HAS_DOWNLOAD_MODE := true
-TW_EXCLUDE_DEFAULT_USB_INIT := true
 TW_EXCLUDE_VENDOR_BOOT_SERVICE := true

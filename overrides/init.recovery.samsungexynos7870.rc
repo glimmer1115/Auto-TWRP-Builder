@@ -2,7 +2,7 @@
 # Backlight is owned by BoardConfig TW_BRIGHTNESS_PATH
 # (/sys/devices/14800000.dsim/backlight/panel/brightness). Do not write it here.
 # Exynos 7870 / 3.18 stock gadget is legacy android_usb, not configfs.
-# TW_EXCLUDE_DEFAULT_USB_INIT is set, so this file owns adbd startup.
+# This file starts adbd on fs. TWRP's own USB init stays enabled.
 
 on early-init
     setprop sys.usb.configfs 0

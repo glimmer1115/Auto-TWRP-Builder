@@ -10,11 +10,11 @@ on:
       MANIFEST_URL:
         description: 'MANIFEST_URL'
         required: true
-        default: 'https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp'
+        default: 'https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni'
       MANIFEST_BRANCH:
         description: 'MANIFEST_BRANCH'
         required: true
-        default: 'twrp-11'
+        default: 'twrp-8.1'
       BUILD_TARGET:
         description: 'BUILD_TARGET'
         required: true
@@ -88,7 +88,7 @@ jobs:
         uses: actions/setup-java@v6
         with:
           distribution: 'zulu'
-          java-version: '11'
+          java-version: '8'
 
       - name: Install repo
         run: |
@@ -207,15 +207,20 @@ jobs:
             ls -l
             exit 1
           fi
-          if [[ "$MK" == omni_* ]]; then
-            mv "$MK" "twrp_${CODENAME}.mk"
-            MK="twrp_${CODENAME}.mk"
+          if [[ "$MANIFEST_BRANCH" == twrp-1* ]]; then
+            if [[ "$MK" == omni_* ]]; then
+              mv "$MK" "twrp_${CODENAME}.mk"
+              MK="twrp_${CODENAME}.mk"
+            fi
+            sed -i 's/omni_/twrp_/g' AndroidProducts.mk "$MK"
+            sed -i 's#vendor/omni/config/common.mk#vendor/twrp/config/common.mk#g' "$MK"
+            LUNCH_PREFIX=twrp
+          else
+            LUNCH_PREFIX=omni
+            echo "오레오 트리는 omni_${CODENAME} 을 유지합니다."
           fi
-
-          sed -i 's/omni_/twrp_/g' AndroidProducts.mk "$MK"
-          sed -i 's#vendor/omni/config/common.mk#vendor/twrp/config/common.mk#g' "$MK"
-          grep -Eq "PRODUCT_NAME *:= *twrp_${CODENAME}" "$MK" \
-            || echo "::warning::$MK 의 PRODUCT_NAME 이 twrp_${CODENAME} 이 아닙니다. lunch 가 실패할 수 있습니다."
+          grep -Eq "PRODUCT_NAME *:= *${LUNCH_PREFIX}_${CODENAME}" "$MK" \
+            || echo "::warning::$MK 의 PRODUCT_NAME 이 ${LUNCH_PREFIX}_${CODENAME} 이 아닙니다. lunch 가 실패할 수 있습니다."
 
           rm -f Android.bp
 
@@ -273,6 +278,7 @@ jobs:
 
           echo "codename=${CODENAME}" >> "$GITHUB_OUTPUT"
           echo "tree=${TREE}" >> "$GITHUB_OUTPUT"
+          echo "lunch_prefix=${LUNCH_PREFIX}" >> "$GITHUB_OUTPUT"
 
       - name: Build recovery
         timeout-minutes: 90
@@ -280,9 +286,10 @@ jobs:
         env:
           CODENAME: ${{ steps.normalize.outputs.codename }}
           TREE: ${{ steps.normalize.outputs.tree }}
+          LUNCH_PREFIX: ${{ steps.normalize.outputs.lunch_prefix }}
         run: |
-          if [ ! -f "${TREE}/twrp_${CODENAME}.mk" ]; then
-            echo "::error::제품 makefile ${TREE}/twrp_${CODENAME}.mk 가 없습니다. lunch 를 호출하지 않습니다."
+          if [ ! -f "${TREE}/${LUNCH_PREFIX}_${CODENAME}.mk" ]; then
+            echo "::error::제품 makefile ${TREE}/${LUNCH_PREFIX}_${CODENAME}.mk 가 없습니다. lunch 를 호출하지 않습니다."
             find device -name '*.mk' | head -40 || true
             exit 1
           fi
@@ -293,11 +300,11 @@ jobs:
           export ALLOW_MISSING_DEPENDENCIES=true
           export LC_ALL=C
           source build/envsetup.sh
-          lunch "twrp_${CODENAME}-eng"
+          lunch "${LUNCH_PREFIX}_${CODENAME}-eng"
           lunch_rc=$?
           set -e
           if [ "$lunch_rc" != "0" ]; then
-            echo "::error::lunch twrp_${CODENAME}-eng 실패 (종료 $lunch_rc)"
+            echo "::error::lunch ${LUNCH_PREFIX}_${CODENAME}-eng 실패 (종료 $lunch_rc)"
             exit 1
           fi
 
