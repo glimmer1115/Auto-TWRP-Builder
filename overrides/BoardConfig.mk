@@ -2,12 +2,11 @@
 # Appended to the END of the generated BoardConfig.mk by the workflow.
 # Last assignment wins. DEVICE_PATH is defined by the workflow just above this block.
 #
-# The SoC can run AArch64, but this firmware does not:
-#   ro.zygote=zygote32
-#   ro.product.cpu.abi=armeabi-v7a
-#   ro.product.cpu.abilist64=        (empty)
-# Recovery userspace (init, adbd, recovery) is ELF32 EM_ARM.
-# This tree is Omni TWRP 8.1. That release accepts armv7-a-neon with cortex-a53.
+# The installed system is zygote32 / armeabi-v7a. The boot kernel is not:
+# stock recovery.img carries an ARM64 Image, and the TWRP builds that reach
+# a UI on this SoC use a 64-bit recovery ramdisk on that kernel.
+# Keep the stock T583 kernel bytes and board id SRPRA23C001RU.
+# Do not substitute the SM-T580 kernel or board id FPRPGTAX000RU.
 
 TARGET_BOARD_PLATFORM := exynos5
 TARGET_SOC := exynos7870
@@ -15,19 +14,21 @@ TARGET_BOOTLOADER_BOARD_NAME := universal7870
 TARGET_NO_BOOTLOADER := true
 TARGET_NO_RADIOIMAGE := true
 
-TARGET_ARCH := arm
-TARGET_ARCH_VARIANT := armv7-a-neon
-TARGET_CPU_ABI := armeabi-v7a
-TARGET_CPU_ABI2 := armeabi
-TARGET_CPU_VARIANT := cortex-a53
-TARGET_2ND_ARCH :=
-TARGET_2ND_ARCH_VARIANT :=
-TARGET_2ND_CPU_ABI :=
-TARGET_2ND_CPU_ABI2 :=
-TARGET_2ND_CPU_VARIANT :=
-# 3.18 binder on this platform is the 64-bit ABI even for a 32-bit zygote.
+TARGET_ARCH := arm64
+TARGET_ARCH_VARIANT := armv8-a
+TARGET_CPU_ABI := arm64-v8a
+TARGET_CPU_ABI2 :=
+TARGET_CPU_VARIANT := generic
+TARGET_CPU_SMP := true
+TARGET_2ND_ARCH := arm
+TARGET_2ND_ARCH_VARIANT := armv7-a-neon
+TARGET_2ND_CPU_ABI := armeabi-v7a
+TARGET_2ND_CPU_ABI2 := armeabi
+TARGET_2ND_CPU_VARIANT := generic
 TARGET_USES_64_BIT_BINDER := true
-TARGET_KERNEL_ARCH := arm
+TARGET_KERNEL_ARCH := arm64
+TARGET_KERNEL_HEADER_ARCH := arm64
+TARGET_USES_UNCOMPRESSED_KERNEL := true
 
 BOARD_VENDOR := samsung
 BOARD_KERNEL_CMDLINE := androidboot.selinux=permissive
@@ -36,11 +37,10 @@ BOARD_KERNEL_PAGESIZE := 2048
 BOARD_KERNEL_OFFSET := 0x00008000
 BOARD_RAMDISK_OFFSET := 0x01000000
 BOARD_TAGS_OFFSET := 0x00000100
-# 32-bit product makefile looks up zImage. The workflow stores the stock
-# kernel bytes at that path (this firmware's blob is what the bootloader
-# already accepts; the Odin step copies those same bytes back in).
-BOARD_KERNEL_IMAGE_NAME := zImage
-TARGET_PREBUILT_KERNEL := $(DEVICE_PATH)/prebuilt/zImage
+# The makefile looks up Image. The workflow stores the stock kernel bytes
+# there. The Odin step copies those same bytes back in.
+BOARD_KERNEL_IMAGE_NAME := Image
+TARGET_PREBUILT_KERNEL := $(DEVICE_PATH)/prebuilt/Image
 # Stock recovery ramdisk is gzip. twrp-11 emits LZ4, and this Oreo
 # bootloader stops with "invalid ramdisk" on anything else.
 BOARD_RAMDISK_USE_LZ4 := false
@@ -76,6 +76,8 @@ TW_DEFAULT_BRIGHTNESS := 162
 TW_NO_SCREEN_BLANK :=
 TW_NO_REBOOT_BOOTLOADER := true
 TW_HAS_DOWNLOAD_MODE := true
+TW_EXCLUDE_DEFAULT_USB_INIT := false
+TARGET_RECOVERY_INITRC :=
 TW_EXCLUDE_VENDOR_BOOT_SERVICE := true
 # Do not set TARGET_GLOBAL_* or HOST_GLOBAL_* here. Omni 8.1 ckati compares
 # those lists with Soong and stops with "Soong variable check failed."

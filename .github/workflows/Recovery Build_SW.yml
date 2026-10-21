@@ -50,7 +50,7 @@ jobs:
           echo "매니페스트 주소: $MANIFEST_URL"
           echo "매니페스트 브랜치: $MANIFEST_BRANCH"
           echo "빌드 대상: ${BUILD_TARGET}image"
-          echo "ABI: armeabi-v7a (32비트 arm, zygote32), 커널 슬롯: zImage"
+          echo "리커버리 ABI: arm64-v8a, 순정 시스템: armeabi-v7a, 커널 슬롯: Image"
           echo "같은 브랜치에 이미 실행이 있으면 이전 실행은 취소됩니다. 그 취소는 디스크 오류가 아닙니다."
           echo "::endgroup::"
 
@@ -180,13 +180,8 @@ jobs:
         run: |
           set -e
           IMG="$(pwd)/recovery.img"
+          ANDROID_ROOT="$(pwd)"
           TREE="$DEVICE_PATH_OUT"
-
-          if [ -f "bootable/recovery/prebuilt/relink.sh" ]; then
-            printf '#!/bin/sh\n' > bootable/recovery/prebuilt/relink.sh
-            chmod +x bootable/recovery/prebuilt/relink.sh
-            echo "relink.sh 를 비활성화했습니다."
-          fi
 
           if [ -z "$TREE" ] || [ ! -d "$TREE" ]; then
             TREE=$(find device -name AndroidProducts.mk -newer recovery.img -printf '%h\n' 2>/dev/null | head -1)
@@ -239,18 +234,18 @@ jobs:
           assert ks > 0, '커널 크기가 0 입니다.'
           kernel = d[pg:pg + ks]
           if kernel[56:60] == b'ARM\x64':
-              kind = 'arm64 Image 헤더 (순정 바이트, 제품 ABI는 armeabi-v7a)'
+              kind = 'arm64 Image 헤더 (순정 커널 바이트)'
           elif kernel.find(bytes.fromhex('18286f01'), 0, 0x400) >= 0:
               kind = 'ARM zImage'
           else:
               kind = '알 수 없는 커널 형식'
-          open('prebuilt/zImage', 'wb').write(kernel)
+          open('prebuilt/Image', 'wb').write(kernel)
           print('커널 바이트', ks, '페이지', pg, 'dt', dts)
           print('판별:', kind)
-          print('32비트 빌드용으로 순정 커널을 prebuilt/zImage 에 저장했습니다.')
+          print('순정 커널을 prebuilt/Image 에 저장했습니다.')
           PY
           ls -l prebuilt
-          file prebuilt/zImage || true
+          file prebuilt/Image || true
 
           if [ ! -f "${GITHUB_WORKSPACE}/overrides/BoardConfig.mk" ]; then
             echo "::error::overrides/BoardConfig.mk 가 없습니다."
@@ -269,6 +264,15 @@ jobs:
             exit 1
           fi
           cp "${GITHUB_WORKSPACE}/overrides/init.recovery.samsungexynos7870.rc" recovery/root/
+          RC="${ANDROID_ROOT}/bootable/recovery/etc/init.rc"
+          if [ ! -f "$RC" ]; then
+            echo "::error::init.rc 를 찾지 못했습니다: $RC"
+            exit 1
+          fi
+          if ! grep -q '/init.recovery.samsungexynos7870.rc' "$RC"; then
+            sed -i '1i import /init.recovery.samsungexynos7870.rc' "$RC"
+            echo "init.rc 가 엑시노스 rc 를 항상 읽게 했습니다."
+          fi
           {
             echo 'TW_BRIGHTNESS_PATH := "/sys/devices/14800000.dsim/backlight/panel/brightness"'
             echo "TW_MAX_BRIGHTNESS := 255"
@@ -329,6 +333,39 @@ jobs:
             [ -f out/error.log ] && tail -n 80 out/error.log
             exit "$rc"
           fi
+
+          ROOT="out/target/product/${CODENAME}/recovery/root"
+          if [ ! -e "$ROOT/sbin/linker64" ]; then
+            src=$(find "out/target/product/${CODENAME}/system" "out/target/product/${CODENAME}/obj" \
+              -name linker64 -type f 2>/dev/null | head -1 || true)
+            if [ -z "$src" ]; then
+              echo "::error::linker64 가 없습니다. init 이 실행되지 않아 화면과 adb가 같이 멈춥니다."
+              find "out/target/product/${CODENAME}" -name 'linker*' | head -20 || true
+              exit 1
+            fi
+            mkdir -p "$ROOT/sbin"
+            cp -a "$src" "$ROOT/sbin/linker64"
+            echo "linker64 를 램디스크에 넣었습니다: $src"
+            mka BOARD_USES_RECOVERY_AS_BOOT=false "${BUILD_TARGET}image" -j"$(nproc)" 2>&1 | tee -a "$GITHUB_WORKSPACE/build.log"
+            rc=${PIPESTATUS[0]}
+            if [ "$rc" != "0" ]; then
+              echo "::error::linker64 반영 후 재빌드 실패 (종료 코드 $rc)"
+              exit "$rc"
+            fi
+          fi
+          missing=0
+          for f in init sbin/linker64 sbin/adbd sbin/recovery; do
+            if [ ! -e "$ROOT/$f" ]; then
+              echo "::error::램디스크에 $f 가 없습니다."
+              missing=1
+            fi
+          done
+          if [ "$missing" != "0" ]; then
+            find "$ROOT" -maxdepth 2 \( -type f -o -type l \) | head -80 || true
+            exit 1
+          fi
+          file "$ROOT/sbin/recovery" "$ROOT/init" "$ROOT/sbin/adbd" || true
+
           if [ ! -f "out/target/product/${CODENAME}/recovery.img" ]; then
             echo "::error::빌드는 끝났지만 recovery.img 가 생성되지 않았습니다."
             ls -l "out/target/product/${CODENAME}" || true
