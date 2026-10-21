@@ -287,9 +287,13 @@ jobs:
             echo "::error::init.rc 를 찾지 못했습니다: $RC"
             exit 1
           fi
-          if ! grep -q '/init.recovery.samsungexynos7870.rc' "$RC"; then
-            sed -i '1i import /init.recovery.samsungexynos7870.rc' "$RC"
-            echo "init.rc 가 엑시노스 rc 를 항상 읽게 했습니다."
+          if ! grep -q 'init.recovery.${ro.hardware}.rc' "$RC"; then
+            echo "::error::init.rc 가 기기 rc 를 읽지 않습니다."
+            exit 1
+          fi
+          if grep -q '/init.recovery.samsungexynos7870.rc' "$RC"; then
+            echo "::error::엑시노스 rc 가 두 번 실행되면 gadget 이 바로 꺼집니다."
+            exit 1
           fi
           MINUI="${ANDROID_ROOT}/bootable/recovery/minuitwrp/Android.mk"
           if [ ! -f "$MINUI" ]; then
@@ -317,6 +321,7 @@ jobs:
           fi
           python3 "${GITHUB_WORKSPACE}/scripts/patch_bringup.py" --gui "${ANDROID_ROOT}/bootable/recovery/gui/gui.cpp"
           python3 "${GITHUB_WORKSPACE}/scripts/patch_bringup.py" --init-rc "$RC"
+          python3 "${GITHUB_WORKSPACE}/scripts/patch_bringup.py" --usb-ffs "${ANDROID_ROOT}/system/core/adb/daemon/usb.cpp"
           python3 "${GITHUB_WORKSPACE}/scripts/patch_bringup.py" --crash "${ANDROID_ROOT}/bootable/recovery"
           {
             echo 'TARGET_RECOVERY_PIXEL_FORMAT := "ABGR_8888"'
@@ -482,8 +487,16 @@ jobs:
             echo "::error::init.rc 가 adbd 를 다시 죽입니다."
             exit 1
           fi
-          if ! grep -q 'wait /dev/usb-ffs/adb/ep1' "$ROOT/init.recovery.samsungexynos7870.rc"; then
+          if grep -q 'wait /dev/usb-ffs/adb/ep1' "$ROOT/init.recovery.samsungexynos7870.rc"; then
+            echo "::error::ep1 대기는 디스크립터가 쓰이기 전에 gadget 을 켭니다."
+            exit 1
+          fi
+          if ! grep -q 'on property:sys.usb.ffs.ready=1' "$ROOT/init.recovery.samsungexynos7870.rc"; then
             echo "::error::gadget 이 adbd 디스크립터보다 먼저 켜집니다."
+            exit 1
+          fi
+          if ! grep -a -q 'SM-T583: wait for functionfs endpoints' "$ROOT/sbin/adbd"; then
+            echo "::error::adbd 가 ep1 생성 전에 ep0 를 닫습니다."
             exit 1
           fi
           if grep -q 'setprop sys.usb.config=' "$ROOT/init.recovery.samsungexynos7870.rc" || grep -q 'setprop sys.usb.config ' "$ROOT/init.recovery.samsungexynos7870.rc"; then

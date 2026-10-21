@@ -59,6 +59,44 @@ def patch_init_rc(text):
     return updated
 
 
+def patch_usb(text):
+    marker = "h->bulk_out = adb_open(USB_FFS_ADB_OUT, O_RDWR);"
+    start = text.find(marker)
+    end = text.find("h->max_rw = MAX_PAYLOAD;", start if start >= 0 else 0)
+    if start < 0 or end < 0:
+        raise SystemExit("adbd functionfs bulk open was not found")
+    line_start = text.rfind("\n", 0, start) + 1
+    indent = text[line_start:start]
+    if indent == "" or indent.strip():
+        raise SystemExit("adbd bulk open indent is not blank")
+    block = (
+        "{i}for (int attempt = 0; attempt < 200 && h->bulk_out < 0; ++attempt) {{\n"
+        "{i}    h->bulk_out = adb_open(USB_FFS_ADB_OUT, O_RDWR);\n"
+        "{i}    if (h->bulk_out < 0)\n"
+        "{i}        std::this_thread::sleep_for(100ms);\n"
+        "{i}}}\n"
+        "{i}if (h->bulk_out < 0) {{\n"
+        "{i}    PLOG(ERROR) << \"SM-T583: wait for functionfs endpoints \" << USB_FFS_ADB_OUT;\n"
+        "{i}    goto err;\n"
+        "{i}}}\n"
+        "{i}for (int attempt = 0; attempt < 200 && h->bulk_in < 0; ++attempt) {{\n"
+        "{i}    h->bulk_in = adb_open(USB_FFS_ADB_IN, O_RDWR);\n"
+        "{i}    if (h->bulk_in < 0)\n"
+        "{i}        std::this_thread::sleep_for(100ms);\n"
+        "{i}}}\n"
+        "{i}if (h->bulk_in < 0) {{\n"
+        "{i}    PLOG(ERROR) << \"SM-T583: wait for functionfs endpoints \" << USB_FFS_ADB_IN;\n"
+        "{i}    goto err;\n"
+        "{i}}}\n"
+    ).format(i=indent)
+    updated = text[:line_start] + block + text[end - len(indent):]
+    if updated.count("SM-T583: wait for functionfs endpoints") != 2:
+        raise SystemExit("adbd endpoint wait was not patched")
+    if "cannot open bulk-out endpoint" in updated:
+        raise SystemExit("adbd still closes ep0 when ep1 is missing")
+    return updated
+
+
 def self_test():
     gui = "int gui_loadResources(void)\n{\n" + GUI_OLD + "\n}\nextern \"C\" int gui_loadCustomResources(void)\n"
     got = patch_gui(gui)
@@ -91,15 +129,39 @@ def self_test():
     usb = open(usb_path, encoding="utf-8").read()
     if "setprop sys.usb.config=" in rc or "setprop sys.usb.config " in rc or "setprop sys.usb.ffs.ready" in rc:
         raise SystemExit("usb config is forced before adbd writes descriptors")
+    if "wait /dev/usb-ffs/adb/ep1" in rc:
+        raise SystemExit("ep1 does not exist until the gadget is bound")
     func_at = rc.find("write /sys/class/android_usb/android0/functions adb")
-    wait_at = rc.find("wait /dev/usb-ffs/adb/ep1")
     start_at = rc.find("start adbd")
+    ready_at = rc.find("on property:sys.usb.ffs.ready=1")
     enable_at = rc.find("write /sys/class/android_usb/android0/enable 1")
-    if min(func_at, start_at, wait_at, enable_at) < 0 or not (func_at < start_at < wait_at < enable_at):
-        raise SystemExit("gadget enable is not after the functionfs endpoint")
+    if min(func_at, start_at, ready_at, enable_at) < 0 or not (func_at < start_at < ready_at < enable_at):
+        raise SystemExit("gadget enable is not after adbd publishes descriptors")
+    if "enable 1" in rc.split("on property:sys.usb.ffs.ready=1", 1)[0]:
+        raise SystemExit("gadget is enabled before the descriptors are ready")
     if "idProduct D001" in usb or "enable 1" in usb:
         raise SystemExit("imported usb rc still enables the gadget")
-    print("usb: adbd publishes descriptors before 04e8:6860 is enabled")
+    sample = (
+        "    h->bulk_out = adb_open(USB_FFS_ADB_OUT, O_RDWR);\n"
+        "    if (h->bulk_out < 0) {\n"
+        "        PLOG(ERROR) << \"cannot open bulk-out endpoint \" << USB_FFS_ADB_OUT;\n"
+        "        goto err;\n"
+        "    }\n"
+        "\n"
+        "    h->bulk_in = adb_open(USB_FFS_ADB_IN, O_RDWR);\n"
+        "    if (h->bulk_in < 0) {\n"
+        "        PLOG(ERROR) << \"cannot open bulk-in endpoint \" << USB_FFS_ADB_IN;\n"
+        "        goto err;\n"
+        "    }\n"
+        "\n"
+        "    h->max_rw = MAX_PAYLOAD;\n"
+    )
+    patched_usb = patch_usb(sample)
+    if "for (int attempt = 0; attempt < 200 && h->bulk_out < 0;" not in patched_usb:
+        raise SystemExit("adbd does not wait for ep1")
+    if patched_usb.find("goto err;") < patched_usb.find("sleep_for(100ms)"):
+        raise SystemExit("adbd closes ep0 before the endpoint exists")
+    print("usb: gadget turns on after ffs.ready, and adbd keeps ep0 open until ep1 exists")
     gui_path = r"C:\twrp-879923a\gui-90.cpp"
     if not __import__("os").path.exists(gui_path):
         gui_path = r"C:\twrp-879923a\gui.cpp"
@@ -497,7 +559,12 @@ if __name__ == "__main__":
         text = open(path, encoding="utf-8").read()
         open(path, "w", encoding="utf-8", newline="\n").write(patch_init_rc(text))
         print("debuggable 가 adbd 를 죽이지 않게 했습니다.")
+    elif len(sys.argv) == 3 and sys.argv[1] == "--usb-ffs":
+        path = sys.argv[2]
+        text = open(path, encoding="utf-8").read()
+        open(path, "w", encoding="utf-8", newline="\n").write(patch_usb(text))
+        print("adbd 가 ep1 생성 전에 ep0 를 닫지 않습니다.")
     elif len(sys.argv) == 3 and sys.argv[1] == "--crash":
         patch_crash(sys.argv[2])
     else:
-        sys.exit("사용법: patch_bringup.py --self-test | --gui FILE | --init-rc FILE | --crash RECOVERY_ROOT")
+        sys.exit("사용법: patch_bringup.py --self-test | --gui FILE | --init-rc FILE | --usb-ffs FILE | --crash RECOVERY_ROOT")

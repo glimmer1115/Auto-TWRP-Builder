@@ -1,10 +1,12 @@
 # SM-T583 (gtaxladwifikx) recovery bring-up.
 # Pixel format is ABGR_8888 in the product makefile. Do not write brightness here.
-# USB ids match stock recovery: 04e8:6860. The gadget stays disabled until
-# adbd has created /dev/usb-ffs/adb/ep1. Enabling earlier advertises an empty
-# functionfs config; the host then hard-resets the link and adb never enumerates.
-# Do not set sys.usb.config or sys.usb.ffs.ready here. The first restarts adbd,
-# and the second claims the descriptors exist before adbd has written them.
+# USB ids match stock recovery: 04e8:6860.
+# init.rc already imports this file as init.recovery.${ro.hardware}.rc.
+# Importing it again runs on fs twice, and the second pass disables the
+# gadget a few milliseconds after the first pass enables it.
+# This kernel creates /dev/usb-ffs/adb/ep1 only when the gadget is bound.
+# adbd writes the descriptors first and then sets sys.usb.ffs.ready.
+# Do not wait for ep1, and do not set sys.usb.config or that property here.
 # A write to /sys/fs/selinux/enforce returns 0 and the kernel stays enforcing.
 
 on early-init
@@ -44,7 +46,8 @@ on fs
     write /sys/class/android_usb/android0/functions adb
     start watchdogd
     start adbd
-    wait /dev/usb-ffs/adb/ep1 15
+
+on property:sys.usb.ffs.ready=1
     write /sys/class/android_usb/android0/enable 1
 
 on boot
