@@ -83,8 +83,10 @@ jobs:
             qemu-user-static libncurses5 python2 python3 python3-pip cpio wget file \
             unzip zip git curl
           python3 -m pip install --user -U twrpdtgen
-          # Omni 8.1 still calls print without parentheses. python-is-python3
-          # makes those scripts fail with SyntaxError before recovery is linked.
+          # Omni 8.1 scripts use print without parentheses, including files whose
+          # shebang is /usr/bin/python. The runner image points that path at Python 3.
+          sudo apt-get -y remove python-is-python3 || true
+          sudo ln -sfn /usr/bin/python2 /usr/bin/python
           sudo ln -sfn /usr/bin/python2 /usr/local/bin/python
           python -c 'import sys; assert sys.version_info[0] == 2, sys.version'
 
@@ -300,6 +302,8 @@ jobs:
           # Close stdin first. lunch without a resolved product reads a menu
           # and will block until the job timeout on a runner with no TTY.
           exec 0</dev/null
+          sudo ln -sfn /usr/bin/python2 /usr/bin/python
+          sudo ln -sfn /usr/bin/python2 /usr/local/bin/python
           if ! python -c 'import sys; raise SystemExit(0 if sys.version_info[0] == 2 else 1)'; then
             echo "::error::빌드용 python 이 Python 2가 아닙니다. Omni 8.1 스크립트가 print 문법에서 멈춥니다."
             python --version || true
