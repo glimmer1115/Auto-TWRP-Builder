@@ -91,10 +91,11 @@ def self_test():
     usb = open(usb_path, encoding="utf-8").read()
     if "setprop sys.usb.config=" in rc or "setprop sys.usb.config " in rc or "setprop sys.usb.ffs.ready" in rc:
         raise SystemExit("usb config is forced before adbd writes descriptors")
+    func_at = rc.find("write /sys/class/android_usb/android0/functions adb")
     wait_at = rc.find("wait /dev/usb-ffs/adb/ep1")
     start_at = rc.find("start adbd")
     enable_at = rc.find("write /sys/class/android_usb/android0/enable 1")
-    if start_at < 0 or wait_at < 0 or enable_at < 0 or not (start_at < wait_at < enable_at):
+    if min(func_at, start_at, wait_at, enable_at) < 0 or not (func_at < start_at < wait_at < enable_at):
         raise SystemExit("gadget enable is not after the functionfs endpoint")
     if "idProduct D001" in usb or "enable 1" in usb:
         raise SystemExit("imported usb rc still enables the gadget")

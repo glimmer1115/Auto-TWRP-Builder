@@ -41,10 +41,10 @@ on fs
     write /sys/class/android_usb/android0/iManufacturer Samsung
     write /sys/class/android_usb/android0/iProduct SM-T583
     write /sys/class/android_usb/android0/iSerial ${ro.serialno}
+    write /sys/class/android_usb/android0/functions adb
     start watchdogd
     start adbd
     wait /dev/usb-ffs/adb/ep1 15
-    write /sys/class/android_usb/android0/functions adb
     write /sys/class/android_usb/android0/enable 1
 
 on boot
