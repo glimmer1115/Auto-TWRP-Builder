@@ -184,6 +184,7 @@ def simulate_gadget_enable():
     if not _descriptors_ready(v2_ok=False, same_fd_v1=False, reopened_v1=True):
         raise SystemExit("reopening ep0 did not publish v1 descriptors")
     print("sim: v2 reject poisons ep0; reopening it publishes v1 before enable")
+    simulate_panel_draw()
 
 
 def self_test():
@@ -652,6 +653,81 @@ def patch_gui_cpp(text):
     return patch_gui_init(patch_lookup(text))
 
 
+FB_FORMAT_OLD = (
+    "    } else if (vi.red.offset == 8 || vi.red.offset == 16) {\n"
+    "        printf(\"setting GGL_PIXEL_FORMAT_BGRA_8888\\n\");\n"
+    "        gr_framebuffer[0].format = GGL_PIXEL_FORMAT_BGRA_8888;\n"
+)
+FB_FORMAT_NEW = (
+    "    } else if (vi.red.offset == 16) {\n"
+    "        printf(\"SM-T583: RGBA draw, swap into panel red.offset 16\\n\");\n"
+    "        gr_framebuffer[0].format = GGL_PIXEL_FORMAT_RGBA_8888;\n"
+    "        sm_swap_rb = true;\n"
+    "    } else if (vi.red.offset == 8) {\n"
+    "        printf(\"setting GGL_PIXEL_FORMAT_BGRA_8888\\n\");\n"
+    "        gr_framebuffer[0].format = GGL_PIXEL_FORMAT_BGRA_8888;\n"
+)
+FB_COPY_OLD = (
+    "        memcpy(gr_framebuffer[0].data, gr_draw->data,\n"
+    "               gr_draw->height * gr_draw->row_bytes);\n"
+)
+FB_COPY_NEW = (
+    "        sm_copy_fb(gr_framebuffer[0].data, gr_draw->data,\n"
+    "               gr_draw->height * gr_draw->row_bytes);\n"
+)
+FB_HELPER = (
+    "static bool sm_swap_rb;\n"
+    "static void sm_copy_fb(void *dst, const void *src, size_t bytes) {\n"
+    "    if (!sm_swap_rb) {\n"
+    "        memcpy(dst, src, bytes);\n"
+    "        return;\n"
+    "    }\n"
+    "    const unsigned char *s = (const unsigned char *)src;\n"
+    "    unsigned char *d = (unsigned char *)dst;\n"
+    "    size_t i;\n"
+    "    for (i = 0; i + 3 < bytes; i += 4) {\n"
+    "        d[i] = s[i + 2];\n"
+    "        d[i + 1] = s[i + 1];\n"
+    "        d[i + 2] = s[i];\n"
+    "        d[i + 3] = s[i + 3];\n"
+    "    }\n"
+    "}\n"
+    "\n"
+)
+
+
+def patch_fbdev(text):
+    anchor = "static bool double_buffered;\n"
+    if anchor not in text:
+        raise SystemExit("graphics_fbdev double_buffered 를 찾지 못했습니다.")
+    if "static bool sm_swap_rb;" not in text:
+        text = text.replace(anchor, anchor + FB_HELPER, 1)
+    if FB_FORMAT_OLD not in text:
+        raise SystemExit("red.offset 16 의 BGRA 설정을 찾지 못했습니다.")
+    text = text.replace(FB_FORMAT_OLD, FB_FORMAT_NEW, 1)
+    if FB_COPY_OLD not in text:
+        raise SystemExit("단일 버퍼 memcpy 를 찾지 못했습니다.")
+    text = text.replace(FB_COPY_OLD, FB_COPY_NEW, 1)
+    if "GGL_PIXEL_FORMAT_BGRA_8888" in text.split("vi.red.offset == 16", 1)[0]:
+        raise SystemExit("red.offset 16 이 아직 BGRA 로 그려집니다.")
+    return text
+
+
+def simulate_panel_draw():
+    # This panel reports red.offset 16. Omni 8.1 pixelflinger faults the first
+    # theme blit when the draw buffer is BGRA, after gr_init has already
+    # copied a black frame. RGBA drawing plus a channel swap is what the
+    # scanout memory expects.
+    def visible(draw_format, swap):
+        return draw_format == "RGBA_8888" and swap
+
+    if visible("BGRA_8888", False):
+        raise SystemExit("BGRA draw must not be treated as visible")
+    if not visible("RGBA_8888", True):
+        raise SystemExit("RGBA draw with a channel swap must reach the panel")
+    print("sim: red.offset 16 uses RGBA drawing and swaps into the panel")
+
+
 def patch_crash(root):
     import os
     files = {
@@ -695,5 +771,10 @@ if __name__ == "__main__":
         print("adbd 가 ep0 가 없을 때 USB 를 포기하지 않습니다.")
     elif len(sys.argv) == 3 and sys.argv[1] == "--crash":
         patch_crash(sys.argv[2])
+    elif len(sys.argv) == 3 and sys.argv[1] == "--fbdev":
+        path = sys.argv[2]
+        text = open(path, encoding="utf-8").read()
+        open(path, "w", encoding="utf-8", newline="\n").write(patch_fbdev(text))
+        print("패널 red.offset 16 은 RGBA 로 그리고 복사할 때 채널을 바꿉니다.")
     else:
-        sys.exit("사용법: patch_bringup.py --self-test | --gui FILE | --init-rc FILE | --usb-ffs FILE | --adb-main FILE | --crash RECOVERY_ROOT")
+        sys.exit("사용법: patch_bringup.py --self-test | --gui FILE | --init-rc FILE | --usb-ffs FILE | --adb-main FILE | --crash RECOVERY_ROOT | --fbdev FILE")
