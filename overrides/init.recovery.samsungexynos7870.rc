@@ -1,9 +1,11 @@
 # SM-T583 (gtaxladwifikx) recovery bring-up.
 # Pixel format is ABGR_8888 in the product makefile. Do not write brightness here.
-# USB ids match stock recovery: 04e8:6860. adbd starts only after the gadget is programmed.
+# USB ids match stock recovery: 04e8:6860. The gadget stays disabled until
+# adbd has created /dev/usb-ffs/adb/ep1. Enabling earlier advertises an empty
+# functionfs config; the host then hard-resets the link and adb never enumerates.
+# Do not set sys.usb.config or sys.usb.ffs.ready here. The first restarts adbd,
+# and the second claims the descriptors exist before adbd has written them.
 # A write to /sys/fs/selinux/enforce returns 0 and the kernel stays enforcing.
-# The Odin packer sets the permissive bits in /sepolicy. Do not stop adbd
-# from here: sys.usb.config=none was signal 9, so the PC never saw adb.
 
 on early-init
     write /sys/fs/selinux/enforce 0
@@ -16,7 +18,6 @@ on early-init
     setprop sys.usb.configfs 0
     setprop sys.usb.ffs.aio_compat 1
     setprop persist.adb.nonblocking_ffs 0
-    setprop ro.adb.nonblocking_ffs 0
 
 on init
     write /sys/fs/selinux/enforce 0
@@ -33,19 +34,18 @@ on fs
     write /sys/devices/virtual/sec/sec_wdt/wdt_control 0
     write /proc/sys/kernel/panic_on_oops 0
     mount functionfs adb /dev/usb-ffs/adb uid=2000,gid=2000,rmode=0770,fmode=0660
-    setprop sys.usb.ffs.ready 1
     write /sys/class/android_usb/android0/enable 0
     write /sys/class/android_usb/android0/idVendor 04e8
     write /sys/class/android_usb/android0/idProduct 6860
     write /sys/class/android_usb/android0/f_ffs/aliases adb
-    write /sys/class/android_usb/android0/functions adb
     write /sys/class/android_usb/android0/iManufacturer Samsung
     write /sys/class/android_usb/android0/iProduct SM-T583
     write /sys/class/android_usb/android0/iSerial ${ro.serialno}
-    setprop sys.usb.config adb
-    write /sys/class/android_usb/android0/enable 1
     start watchdogd
     start adbd
+    wait /dev/usb-ffs/adb/ep1 15
+    write /sys/class/android_usb/android0/functions adb
+    write /sys/class/android_usb/android0/enable 1
 
 on boot
     write /sys/fs/selinux/enforce 0

@@ -85,6 +85,20 @@ def self_test():
     if "start adbd" not in patched:
         raise SystemExit("adbd start missing")
     print("init.rc: restart adbd removed")
+    rc_path = r"c:\Auto-TWRP-Builder\overrides\init.recovery.samsungexynos7870.rc"
+    usb_path = r"c:\Auto-TWRP-Builder\overrides\init.recovery.usb.rc"
+    rc = open(rc_path, encoding="utf-8").read()
+    usb = open(usb_path, encoding="utf-8").read()
+    if "setprop sys.usb.config=" in rc or "setprop sys.usb.config " in rc or "setprop sys.usb.ffs.ready" in rc:
+        raise SystemExit("usb config is forced before adbd writes descriptors")
+    wait_at = rc.find("wait /dev/usb-ffs/adb/ep1")
+    start_at = rc.find("start adbd")
+    enable_at = rc.find("write /sys/class/android_usb/android0/enable 1")
+    if start_at < 0 or wait_at < 0 or enable_at < 0 or not (start_at < wait_at < enable_at):
+        raise SystemExit("gadget enable is not after the functionfs endpoint")
+    if "idProduct D001" in usb or "enable 1" in usb:
+        raise SystemExit("imported usb rc still enables the gadget")
+    print("usb: adbd publishes descriptors before 04e8:6860 is enabled")
     gui_path = r"C:\twrp-879923a\gui-90.cpp"
     if not __import__("os").path.exists(gui_path):
         gui_path = r"C:\twrp-879923a\gui.cpp"

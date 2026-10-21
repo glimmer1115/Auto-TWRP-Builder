@@ -277,6 +277,8 @@ jobs:
             exit 1
           fi
           cp "${GITHUB_WORKSPACE}/overrides/init.recovery.samsungexynos7870.rc" recovery/root/
+          cp "${GITHUB_WORKSPACE}/overrides/init.recovery.usb.rc" recovery/root/init.recovery.usb.rc
+          cp "${GITHUB_WORKSPACE}/overrides/init.recovery.usb.rc" "${ANDROID_ROOT}/bootable/recovery/etc/init.recovery.usb.rc"
           mkdir -p recovery/root/sbin
           cp "${GITHUB_WORKSPACE}/overrides/watchdogd.sh" recovery/root/sbin/watchdogd.sh
           chmod 755 recovery/root/sbin/watchdogd.sh
@@ -478,6 +480,18 @@ jobs:
           fi
           if grep -q 'restart adbd' "$ROOT/init.rc"; then
             echo "::error::init.rc 가 adbd 를 다시 죽입니다."
+            exit 1
+          fi
+          if ! grep -q 'wait /dev/usb-ffs/adb/ep1' "$ROOT/init.recovery.samsungexynos7870.rc"; then
+            echo "::error::gadget 이 adbd 디스크립터보다 먼저 켜집니다."
+            exit 1
+          fi
+          if grep -q 'setprop sys.usb.config=' "$ROOT/init.recovery.samsungexynos7870.rc" || grep -q 'setprop sys.usb.config ' "$ROOT/init.recovery.samsungexynos7870.rc"; then
+            echo "::error::sys.usb.config 가 adbd 를 다시 건드립니다."
+            exit 1
+          fi
+          if [ ! -f "$ROOT/init.recovery.usb.rc" ] || grep -q 'idProduct D001' "$ROOT/init.recovery.usb.rc"; then
+            echo "::error::순정 USB rc 가 18d1:d001 로 덮어씁니다."
             exit 1
           fi
 
