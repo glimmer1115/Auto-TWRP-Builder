@@ -85,9 +85,14 @@ def self_test():
     if "start adbd" not in patched:
         raise SystemExit("adbd start missing")
     print("init.rc: restart adbd removed")
-    gui = open(r"C:\twrp-879923a\gui.cpp", encoding="utf-8").read() if __import__("os").path.exists(r"C:\twrp-879923a\gui.cpp") else ""
+    gui_path = r"C:\twrp-879923a\gui-90.cpp"
+    if not __import__("os").path.exists(gui_path):
+        gui_path = r"C:\twrp-879923a\gui.cpp"
+    gui = open(gui_path, encoding="utf-8").read() if __import__("os").path.exists(gui_path) else ""
     if gui:
         got = patch_gui_cpp(gui)
+        if "TW_SCREEN_BLANK_ON_BOOT" in gui and "TW_SCREEN_BLANK_ON_BOOT" in got.split("int gui_init(void)", 1)[1].split("int gui_loadResources", 1)[0]:
+            raise SystemExit("android-9.0 splash block was not patched")
         body = got.split("std::string gui_lookup", 1)[1].split("gui_init", 1)[0]
         if "GetResources() == NULL" not in body or body.find("== NULL") > body.find("FindString"):
             raise SystemExit("lookup null check missing")
@@ -291,7 +296,7 @@ def patch_data(text):
     return text.replace(DATA_OLD, DATA_NEW, 1)
 
 
-GUI_INIT_OLD = (
+GUI_INIT_81 = (
     "\tgr_init();\n"
     "\tTWFunc::Set_Brightness(DataManager::GetStrValue(\"tw_brightness\"));\n"
     "\n"
@@ -306,6 +311,32 @@ GUI_INIT_OLD = (
     "\t\tPageManager::ReleasePackage(\"splash\");\n"
     "\t}\n"
     "\n"
+    "\tev_init();\n"
+)
+GUI_INIT_90 = (
+    "\tgr_init();\n"
+    "\tTWFunc::Set_Brightness(DataManager::GetStrValue(\"tw_brightness\"));\n"
+    "\n"
+    "#ifdef TW_SCREEN_BLANK_ON_BOOT\n"
+    "        printf(\"TW_SCREEN_BLANK_ON_BOOT := true\\n\");\n"
+    "        blankTimer.blank();\n"
+    "        blankTimer.resetTimerAndUnblank();\n"
+    "#endif\n"
+    "\n"
+    "\t// load and show splash screen\n"
+    "\tif (PageManager::LoadPackage(\"splash\", TWRES \"splash.xml\", \"splash\")) {\n"
+    "\t\tLOGERR(\"Failed to load splash screen XML.\\n\");\n"
+    "\t}\n"
+    "\telse {\n"
+    "\t\tPageManager::SelectPackage(\"splash\");\n"
+    "\t\tPageManager::Render();\n"
+    "\t\tflip();\n"
+    "\t\tPageManager::ReleasePackage(\"splash\");\n"
+    "\t}\n"
+    "\n"
+    "#ifdef TW_DELAY_TOUCH_INIT_MS\n"
+    "\tusleep(TW_DELAY_TOUCH_INIT_MS);\n"
+    "#endif\n"
     "\tev_init();\n"
 )
 GUI_INIT_NEW = (
@@ -338,9 +369,11 @@ GUI_INIT_NEW = (
 
 
 def patch_gui_init(text):
-    if GUI_INIT_OLD not in text:
-        raise SystemExit("gui_init 의 스플래시 화면을 찾지 못했습니다.")
-    return text.replace(GUI_INIT_OLD, GUI_INIT_NEW, 1)
+    if GUI_INIT_90 in text:
+        return text.replace(GUI_INIT_90, GUI_INIT_NEW, 1)
+    if GUI_INIT_81 in text:
+        return text.replace(GUI_INIT_81, GUI_INIT_NEW, 1)
+    raise SystemExit("gui_init 의 스플래시 화면을 찾지 못했습니다.")
 
 
 def patch_gui_cpp(text):
