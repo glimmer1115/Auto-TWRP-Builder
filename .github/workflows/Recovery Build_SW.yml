@@ -322,6 +322,7 @@ jobs:
           python3 "${GITHUB_WORKSPACE}/scripts/patch_bringup.py" --gui "${ANDROID_ROOT}/bootable/recovery/gui/gui.cpp"
           python3 "${GITHUB_WORKSPACE}/scripts/patch_bringup.py" --init-rc "$RC"
           python3 "${GITHUB_WORKSPACE}/scripts/patch_bringup.py" --usb-ffs "${ANDROID_ROOT}/system/core/adb/daemon/usb.cpp"
+          python3 "${GITHUB_WORKSPACE}/scripts/patch_bringup.py" --adb-main "${ANDROID_ROOT}/system/core/adb/daemon/main.cpp"
           python3 "${GITHUB_WORKSPACE}/scripts/patch_bringup.py" --crash "${ANDROID_ROOT}/bootable/recovery"
           {
             echo 'TARGET_RECOVERY_PIXEL_FORMAT := "ABGR_8888"'
@@ -491,12 +492,24 @@ jobs:
             echo "::error::ep1 대기는 디스크립터가 쓰이기 전에 gadget 을 켭니다."
             exit 1
           fi
-          if ! grep -q 'on property:sys.usb.ffs.ready=1' "$ROOT/init.recovery.samsungexynos7870.rc"; then
-            echo "::error::gadget 이 adbd 디스크립터보다 먼저 켜집니다."
+          if ! grep -q 'exec /sbin/toybox sleep 2' "$ROOT/init.recovery.samsungexynos7870.rc"; then
+            echo "::error::adbd 가 디스크립터를 쓰기 전에 gadget 이 켜집니다."
+            exit 1
+          fi
+          if ! grep -q 'chmod 0666 /dev/usb-ffs/adb/ep0' "$ROOT/init.recovery.samsungexynos7870.rc"; then
+            echo "::error::ep0 가 shell 계정에 열려 있지 않습니다."
+            exit 1
+          fi
+          if [ ! -e "$ROOT/sbin/toybox" ]; then
+            echo "::error::램디스크에 toybox 가 없어 USB 대기를 할 수 없습니다."
             exit 1
           fi
           if ! grep -a -q 'SM-T583: wait for functionfs endpoints' "$ROOT/sbin/adbd"; then
             echo "::error::adbd 가 ep1 생성 전에 ep0 를 닫습니다."
+            exit 1
+          fi
+          if ! grep -a -q 'SM-T583: always listen on functionfs' "$ROOT/sbin/adbd"; then
+            echo "::error::adbd 가 시작 때 ep0 가 없으면 USB 를 포기합니다."
             exit 1
           fi
           if grep -q 'setprop sys.usb.config=' "$ROOT/init.recovery.samsungexynos7870.rc" || grep -q 'setprop sys.usb.config ' "$ROOT/init.recovery.samsungexynos7870.rc"; then

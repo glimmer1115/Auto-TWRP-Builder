@@ -97,6 +97,39 @@ def patch_usb(text):
     return updated
 
 
+def patch_adb_main(text):
+    marker = "if (access(USB_FFS_ADB_EP0, F_OK) == 0) {"
+    start = text.find(marker)
+    if start < 0:
+        raise SystemExit("adbd ep0 existence check was not found")
+    end = text.find("is_usb = true;", start)
+    if end < 0:
+        raise SystemExit("adbd usb_init call was not found")
+    end = text.find("\n", end)
+    # Drop the if-block's closing brace as well as its body.
+    end = text.find("\n", end + 1)
+    line_start = text.rfind("\n", 0, start) + 1
+    indent = text[line_start:start]
+    if indent == "" or indent.strip():
+        raise SystemExit("adbd main indent is not blank")
+    block = (
+        "{i}usb_init();\n"
+        "{i}bool is_usb = true;\n"
+        "{i}LOG(INFO) << \"SM-T583: always listen on functionfs\";\n"
+    ).format(i=indent)
+    # The original declaration is "bool is_usb = false;" just above the if.
+    decl = text.rfind("bool is_usb = false;", 0, start)
+    if decl < 0:
+        raise SystemExit("adbd is_usb declaration was not found")
+    decl_line = text.rfind("\n", 0, decl) + 1
+    updated = text[:decl_line] + block + text[end + 1:]
+    if "access(USB_FFS_ADB_EP0" in updated:
+        raise SystemExit("adbd still gives up when ep0 is missing at startup")
+    if updated.count("bool is_usb") != 1:
+        raise SystemExit("adbd is_usb was declared twice")
+    return updated
+
+
 def self_test():
     gui = "int gui_loadResources(void)\n{\n" + GUI_OLD + "\n}\nextern \"C\" int gui_loadCustomResources(void)\n"
     got = patch_gui(gui)
@@ -129,16 +162,15 @@ def self_test():
     usb = open(usb_path, encoding="utf-8").read()
     if "setprop sys.usb.config=" in rc or "setprop sys.usb.config " in rc or "setprop sys.usb.ffs.ready" in rc:
         raise SystemExit("usb config is forced before adbd writes descriptors")
-    if "wait /dev/usb-ffs/adb/ep1" in rc:
+    if "wait /dev/usb-ffs/adb/ep1" in rc or "on property:sys.usb.ffs.ready=1" in rc:
         raise SystemExit("ep1 does not exist until the gadget is bound")
     func_at = rc.find("write /sys/class/android_usb/android0/functions adb")
     start_at = rc.find("start adbd")
-    ready_at = rc.find("on property:sys.usb.ffs.ready=1")
+    sleep_at = rc.find("exec /sbin/toybox sleep 2")
     enable_at = rc.find("write /sys/class/android_usb/android0/enable 1")
-    if min(func_at, start_at, ready_at, enable_at) < 0 or not (func_at < start_at < ready_at < enable_at):
-        raise SystemExit("gadget enable is not after adbd publishes descriptors")
-    if "enable 1" in rc.split("on property:sys.usb.ffs.ready=1", 1)[0]:
-        raise SystemExit("gadget is enabled before the descriptors are ready")
+    chmod_at = rc.find("chmod 0666 /dev/usb-ffs/adb/ep0")
+    if min(chmod_at, func_at, start_at, sleep_at, enable_at) < 0 or not (chmod_at < func_at < start_at < sleep_at < enable_at):
+        raise SystemExit("gadget enable is not after adbd has had time to write descriptors")
     if "idProduct D001" in usb or "enable 1" in usb:
         raise SystemExit("imported usb rc still enables the gadget")
     sample = (
@@ -161,7 +193,24 @@ def self_test():
         raise SystemExit("adbd does not wait for ep1")
     if patched_usb.find("goto err;") < patched_usb.find("sleep_for(100ms)"):
         raise SystemExit("adbd closes ep0 before the endpoint exists")
-    print("usb: gadget turns on after ffs.ready, and adbd keeps ep0 open until ep1 exists")
+    main = (
+        "    drop_privileges(server_port);\n"
+        "\n"
+        "    bool is_usb = false;\n"
+        "    if (access(USB_FFS_ADB_EP0, F_OK) == 0) {\n"
+        "        // Listen on USB.\n"
+        "        usb_init();\n"
+        "        is_usb = true;\n"
+        "    }\n"
+        "\n"
+        "    std::string prop_port;\n"
+    )
+    patched_main = patch_adb_main(main)
+    if "access(USB_FFS_ADB_EP0" in patched_main or "always listen on functionfs" not in patched_main:
+        raise SystemExit("adbd still skips functionfs when ep0 is missing")
+    if "}" in patched_main.split("prop_port", 1)[0]:
+        raise SystemExit("adbd main patch left the old if-block brace")
+    print("usb: init enables 04e8:6860 two seconds after adbd, which keeps listening for ep0")
     gui_path = r"C:\twrp-879923a\gui-90.cpp"
     if not __import__("os").path.exists(gui_path):
         gui_path = r"C:\twrp-879923a\gui.cpp"
@@ -564,7 +613,12 @@ if __name__ == "__main__":
         text = open(path, encoding="utf-8").read()
         open(path, "w", encoding="utf-8", newline="\n").write(patch_usb(text))
         print("adbd 가 ep1 생성 전에 ep0 를 닫지 않습니다.")
+    elif len(sys.argv) == 3 and sys.argv[1] == "--adb-main":
+        path = sys.argv[2]
+        text = open(path, encoding="utf-8").read()
+        open(path, "w", encoding="utf-8", newline="\n").write(patch_adb_main(text))
+        print("adbd 가 ep0 가 없을 때 USB 를 포기하지 않습니다.")
     elif len(sys.argv) == 3 and sys.argv[1] == "--crash":
         patch_crash(sys.argv[2])
     else:
-        sys.exit("사용법: patch_bringup.py --self-test | --gui FILE | --init-rc FILE | --usb-ffs FILE | --crash RECOVERY_ROOT")
+        sys.exit("사용법: patch_bringup.py --self-test | --gui FILE | --init-rc FILE | --usb-ffs FILE | --adb-main FILE | --crash RECOVERY_ROOT")
