@@ -1,6 +1,9 @@
 # SM-T583 (gtaxladwifikx) recovery bring-up.
 # Pixel format is ABGR_8888 in the product makefile. Do not write brightness here.
 # USB ids match stock recovery: 04e8:6860. adbd starts only after the gadget is programmed.
+# A write to /sys/fs/selinux/enforce returns 0 and the kernel stays enforcing.
+# The Odin packer sets the permissive bits in /sepolicy. Do not stop adbd
+# from here: sys.usb.config=none was signal 9, so the PC never saw adb.
 
 on early-init
     write /sys/fs/selinux/enforce 0
@@ -46,18 +49,6 @@ on fs
 
 on boot
     write /sys/fs/selinux/enforce 0
-    setprop sys.usb.config adb
-    start adbd
-
-on property:sys.usb.config=none
-    stop adbd
-    write /sys/class/android_usb/android0/enable 0
-
-on property:sys.usb.config=adb
-    write /sys/class/android_usb/android0/enable 0
-    write /sys/class/android_usb/android0/functions adb
-    write /sys/class/android_usb/android0/enable 1
-    start adbd
 
 service watchdogd /sbin/watchdogd.sh
     class core

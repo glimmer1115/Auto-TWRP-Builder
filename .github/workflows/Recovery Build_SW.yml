@@ -278,6 +278,30 @@ jobs:
             sed -i '1i import /init.recovery.samsungexynos7870.rc' "$RC"
             echo "init.rc 가 엑시노스 rc 를 항상 읽게 했습니다."
           fi
+          MINUI="${ANDROID_ROOT}/bootable/recovery/minuitwrp/Android.mk"
+          if [ ! -f "$MINUI" ]; then
+            echo "::error::minuitwrp Android.mk 가 없습니다: $MINUI"
+            exit 1
+          fi
+          if ! grep -q 'TW_NO_SCREEN_BLANK' "$MINUI"; then
+            python3 - "$MINUI" <<'PY'
+          import sys
+          path = sys.argv[1]
+          text = open(path, encoding='utf-8').read()
+          needle = "include $(BUILD_SHARED_LIBRARY)\n"
+          insert = (
+              "ifeq ($(TW_NO_SCREEN_BLANK), true)\n"
+              "LOCAL_CFLAGS += -DTW_NO_SCREEN_BLANK\n"
+              "endif\n"
+              "\n"
+          )
+          idx = text.rfind(needle)
+          if idx < 0:
+              sys.exit('minui Android.mk 에서 BUILD_SHARED_LIBRARY 를 찾지 못했습니다.')
+          open(path, 'w', encoding='utf-8', newline='\n').write(text[:idx] + insert + text[idx:])
+          print('libminuitwrp 의 fbdev_blank 를 no-op 으로 만들었습니다.')
+          PY
+          fi
           {
             echo 'TARGET_RECOVERY_PIXEL_FORMAT := "ABGR_8888"'
             echo 'TW_BRIGHTNESS_PATH := "/sys/devices/14800000.dsim/backlight/panel/brightness"'
@@ -375,6 +399,24 @@ jobs:
             exit 1
           fi
           file "$ROOT/sbin/recovery" "$ROOT/init" "$ROOT/sbin/adbd" || true
+          lib=$(find "out/target/product/${CODENAME}" -name 'libminuitwrp.so' -print | head -1)
+          if [ -z "$lib" ]; then
+            echo "::error::libminuitwrp.so 가 없습니다. 단일 버퍼와 blank no-op 을 확인할 수 없습니다."
+            exit 1
+          fi
+          echo "minui 라이브러리: $lib"
+          if ! grep -a -q 'RECOVERY_GRAPHICS_FORCE_SINGLE_BUFFER := true' "$lib"; then
+            echo "::error::단일 버퍼 플래그가 libminuitwrp 에 컴파일되지 않았습니다."
+            exit 1
+          fi
+          if grep -a -q 'ioctl(): blank' "$lib"; then
+            echo "::error::fbdev_blank 가 아직 FBIOBLANK 를 호출합니다. 이 패널은 그때 꺼집니다."
+            exit 1
+          fi
+          if grep -a -q 'cannot open LCD backlight' "$lib"; then
+            echo "::error::fbdev_blank 가 밝기 0 을 쓰도록 컴파일되었습니다."
+            exit 1
+          fi
 
           if [ ! -f "out/target/product/${CODENAME}/recovery.img" ]; then
             echo "::error::빌드는 끝났지만 recovery.img 가 생성되지 않았습니다."
@@ -392,7 +434,18 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/artifacts"
           cp "$OUT/recovery.img" built_recovery.img
           python3 - recovery.img built_recovery.img "$GITHUB_WORKSPACE/artifacts/recovery.img" <<'PY'
-          import gzip, hashlib, os, struct, subprocess, sys, tempfile
+          import gzip, hashlib, importlib.util, os, struct, subprocess, sys, tempfile
+
+          def load_marker():
+              path = os.path.join(os.environ['GITHUB_WORKSPACE'], 'scripts', 'mark_permissive.py')
+              spec = importlib.util.spec_from_file_location('mark_permissive', path)
+              if spec is None or spec.loader is None:
+                  sys.exit('sepolicy 스크립트를 열지 못했습니다.')
+              mod = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(mod)
+              return mod
+
+          marker = load_marker()
 
           PART_SIZE = 39845888
           TRAILER = b'SEANDROIDENFORCE'
@@ -447,6 +500,10 @@ jobs:
               if raw is None or raw[:6] not in (b'070701', b'070702'):
                   sys.exit('램디스크가 gzip cpio 가 아닙니다. 오레오 부트로더는 invalid ramdisk 로 멈춥니다.')
               raw = retarget_linker(raw)
+              try:
+                  raw = marker.mark_cpio(raw)
+              except Exception as exc:
+                  sys.exit('sepolicy permissive 기록 실패: %s' % exc)
               out = bytearray(gzip.compress(raw, compresslevel=9, mtime=0))
               # Stock recovery gzip is 1f 8b 08 00 | mtime 0 | xfl 0 | os 3.
               # Python writes xfl 2 and os 255. This bootloader checks that header.

@@ -65,8 +65,12 @@ TARGET_SCREEN_HEIGHT := 1920
 # FBIOGET on this panel: 32bpp, 1200x1920, red.offset 16, green.offset 8,
 # blue.offset 0, line_length 4800, smem_len 18432000, yres_virtual 1920.
 # smem_len is exactly two screens, so minui turns on double buffering and
-# FBIOPUT_VSCREENINFO asks for yres_virtual 3840. That faults and recovery
-# dies with signal 11. Stay on the single visible page.
+# FBIOPUT_VSCREENINFO asks for yres_virtual 3840 unless single-buffer is
+# compiled in. The 8.1 minui makefile never passed TW_NO_SCREEN_BLANK to
+# the compiler, so fbdev_blank still issued FBIOBLANK. That powers this
+# dsim panel down (the brightness-0 write before signal 11). The workflow
+# adds only -DTW_NO_SCREEN_BLANK to libminuitwrp. Do not also pass the
+# brightness macros there: with all three set, fbdev_blank writes "000".
 TARGET_RECOVERY_PIXEL_FORMAT := "ABGR_8888"
 RECOVERY_GRAPHICS_USE_LINELENGTH := true
 RECOVERY_GRAPHICS_FORCE_USE_LINELENGTH := true
@@ -80,8 +84,9 @@ TW_THEME := portrait_hdpi
 TW_BRIGHTNESS_PATH := "/sys/devices/14800000.dsim/backlight/panel/brightness"
 TW_MAX_BRIGHTNESS := 306
 TW_DEFAULT_BRIGHTNESS := 162
-# fbdev's FBIOBLANK powers this dsim panel down and does not bring the picture back.
-# With the brightness path set, TWRP writes the backlight node instead of blanking.
+# The recovery binary sees this flag. libminuitwrp sees it only after the
+# workflow patches minui, and that patch must not add the brightness macros.
+# With all three macros set, fbdev_blank writes 000 and this panel goes dark.
 TW_NO_SCREEN_BLANK := true
 TW_NO_REBOOT_BOOTLOADER := true
 TW_HAS_DOWNLOAD_MODE := true

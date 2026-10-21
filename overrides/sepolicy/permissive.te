@@ -1,6 +1,8 @@
 # The bootloader passes androidboot.selinux=enforcing and ignores the
-# boot-image cmdline. The recovery policy then denies the functionfs
-# mount, so adbd never enumerates, and denies recovery writes.
+# boot-image cmdline. The kernel also accepts a write of 0 to enforce
+# and stays enforcing, so these rules have to be in the loaded policy.
+# The Odin packer sets the same bits in /sepolicy. This file remains
+# the source copy for the device tree.
 permissive init;
 permissive recovery;
 permissive adbd;
