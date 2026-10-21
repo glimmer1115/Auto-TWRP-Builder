@@ -77,11 +77,5 @@ TW_NO_SCREEN_BLANK :=
 TW_NO_REBOOT_BOOTLOADER := true
 TW_HAS_DOWNLOAD_MODE := true
 TW_EXCLUDE_VENDOR_BOOT_SERVICE := true
-# Ubuntu 22.04 gcc treats warnings as errors that this Omni 8.1 tree never saw.
-# C++-only options stay off the C flags. gcc errors if a C file receives them.
-TW8_NO_ERROR := -Wno-error=format-truncation -Wno-error=format-overflow -Wno-error=stringop-overflow -Wno-error=stringop-truncation -Wno-error=restrict -Wno-error=address -Wno-error=maybe-uninitialized -Wno-error=implicit-fallthrough
-TW8_NO_ERROR_CXX := $(TW8_NO_ERROR) -Wno-error=class-memaccess -Wno-error=catch-value -Wno-error=deprecated-copy
-TARGET_GLOBAL_CFLAGS += $(TW8_NO_ERROR)
-TARGET_GLOBAL_CPPFLAGS += $(TW8_NO_ERROR_CXX)
-HOST_GLOBAL_CFLAGS += $(TW8_NO_ERROR)
-HOST_GLOBAL_CPPFLAGS += $(TW8_NO_ERROR_CXX)
+# Do not set TARGET_GLOBAL_* or HOST_GLOBAL_* here. Omni 8.1 ckati compares
+# those lists with Soong and stops with "Soong variable check failed."
