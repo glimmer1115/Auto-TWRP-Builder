@@ -1,7 +1,6 @@
 # SM-T583 (gtaxladwifikx) recovery bring-up.
-# A 5-7s backlight blink is the Exynos watchdog resetting recovery
-# before adbd or the UI can stay up. Stop that before USB setup.
-# Backlight level stays with TW_BRIGHTNESS_PATH. Do not write it here.
+# Pixel format is ABGR_8888 in the product makefile. Do not write brightness here.
+# USB ids match stock recovery: 04e8:6860. adbd starts only after the gadget is programmed.
 
 on early-init
     write /sys/fs/selinux/enforce 0
@@ -15,7 +14,6 @@ on early-init
     setprop sys.usb.ffs.aio_compat 1
     setprop persist.adb.nonblocking_ffs 0
     setprop ro.adb.nonblocking_ffs 0
-    start watchdogd
 
 on init
     write /sys/devices/virtual/sec/sec_wdt/wdt_control 0
@@ -25,7 +23,6 @@ on init
     mkdir /dev/usb-ffs 0770 shell shell
     mkdir /dev/usb-ffs/adb 0770 shell shell
     start watchdogd
-    start adbd
 
 on fs
     write /sys/devices/virtual/sec/sec_wdt/wdt_control 0

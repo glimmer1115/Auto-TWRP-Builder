@@ -62,6 +62,9 @@ BOARD_SUPPRESS_SECURE_ERASE := true
 
 TARGET_SCREEN_WIDTH := 1200
 TARGET_SCREEN_HEIGHT := 1920
+# TWRP 8.1 maps ABGR_8888 to -DRECOVERY_ABGR, which swaps red and blue.
+# That is the color fix used on the 14800000.dsim panel. BGRA_8888 is the
+# same swap. RGBX_8888 leaves the channels unswapped.
 TARGET_RECOVERY_PIXEL_FORMAT := "ABGR_8888"
 RECOVERY_GRAPHICS_USE_LINELENGTH := true
 RECOVERY_SDCARD_ON_DATA := true
@@ -72,7 +75,9 @@ TW_THEME := portrait_hdpi
 TW_BRIGHTNESS_PATH := "/sys/devices/14800000.dsim/backlight/panel/brightness"
 TW_MAX_BRIGHTNESS := 255
 TW_DEFAULT_BRIGHTNESS := 162
-TW_NO_SCREEN_BLANK :=
+# fbdev's FBIOBLANK powers this dsim panel down and does not bring the picture back.
+# With the brightness path set, TWRP writes the backlight node instead of blanking.
+TW_NO_SCREEN_BLANK := true
 TW_NO_REBOOT_BOOTLOADER := true
 TW_HAS_DOWNLOAD_MODE := true
 TW_EXCLUDE_DEFAULT_USB_INIT := true
