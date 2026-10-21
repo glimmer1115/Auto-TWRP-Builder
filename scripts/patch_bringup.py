@@ -104,6 +104,11 @@ def self_test():
             raise SystemExit("language load or fopen kmsg remains")
         if "open(\"/dev/kmsg\", O_WRONLY | O_CLOEXEC)" not in twrp:
             raise SystemExit("kmsg open flags missing")
+        for marker in ("sm_beacon(\"151\")", "sm_beacon(\"153\")", "sm_beacon(\"154\")", "sm_beacon(\"155\")", "sm_beacon(\"156\")", "sm_beacon(\"157\")", "signal(SIGSEGV, sm_fault)", "/cache/recovery/sm-stage"):
+            if marker not in twrp:
+                raise SystemExit("missing " + marker)
+        if "gui_startPage(\"system_readonly\"" in twrp:
+            raise SystemExit("system_readonly page still starts")
         data = open(r"C:\twrp-879923a\data.cpp", encoding="utf-8").read()
         data = patch_data(data)
         if "skip late brightness restore" not in data:
@@ -179,6 +184,34 @@ def patch_language(text):
 
 def patch_twrp(text):
     helper = (
+        "static const char sm_bright[] = \"/sys/devices/14800000.dsim/backlight/panel/brightness\";\n"
+        "static const char sm_stage[] = \"/cache/recovery/sm-stage\";\n"
+        "static void sm_beacon(const char *value) {\n"
+        "\tconst char *p = value;\n"
+        "\twhile (*p)\n"
+        "\t\tp++;\n"
+        "\tint fd = open(sm_bright, O_WRONLY | O_CLOEXEC);\n"
+        "\tif (fd >= 0) {\n"
+        "\t\twrite(fd, value, p - value);\n"
+        "\t\tclose(fd);\n"
+        "\t}\n"
+        "\tfd = open(sm_stage, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644);\n"
+        "\tif (fd >= 0) {\n"
+        "\t\twrite(fd, value, p - value);\n"
+        "\t\twrite(fd, \"\\n\", 1);\n"
+        "\t\tclose(fd);\n"
+        "\t}\n"
+        "}\n"
+        "static void sm_fault(int sig) {\n"
+        "\t(void)sig;\n"
+        "\tint fd = open(sm_bright, O_WRONLY | O_CLOEXEC);\n"
+        "\tif (fd >= 0) {\n"
+        "\t\twrite(fd, \"100\", 3);\n"
+        "\t\tclose(fd);\n"
+        "\t}\n"
+        "\tfor (;;)\n"
+        "\t\tsleep(30);\n"
+        "}\n"
         "static void sm_kmsg(const char *text) {\n"
         "\tint fd = open(\"/dev/kmsg\", O_WRONLY | O_CLOEXEC);\n"
         "\tif (fd >= 0) {\n"
@@ -199,20 +232,26 @@ def patch_twrp(text):
     if "static void sm_kmsg(" not in text:
         text = text.replace(anchor, helper + anchor, 1)
     replacements = (
-        ("\tgui_init();\n", "\tgui_init();\n\tsm_kmsg(\"SM-T583 stage after-gui-init\");\n"),
+        ("\tsignal(SIGPIPE, SIG_IGN);\n", "\tsignal(SIGPIPE, SIG_IGN);\n\tsignal(SIGSEGV, sm_fault);\n\tsignal(SIGBUS, sm_fault);\n\tsignal(SIGABRT, sm_fault);\n"),
+        ("\tgui_init();\n", "\tgui_init();\n\tsm_beacon(\"151\");\n\tsm_kmsg(\"SM-T583 stage after-gui-init\");\n"),
         (
             "\tgui_loadResources();\n",
             "\tif (gui_loadResources() != 0)\n"
             "\t\tsm_kmsg(\"SM-T583 stage resources failed\");\n"
             "\telse\n"
-            "\t\tsm_kmsg(\"SM-T583 stage resources ok\");\n",
+            "\t\tsm_kmsg(\"SM-T583 stage resources ok\");\n"
+            "\tsm_beacon(\"153\");\n",
         ),
+        ("\tDataManager::ReadSettingsFile();\n", "\tDataManager::ReadSettingsFile();\n\tsm_beacon(\"154\");\n"),
         (
             "\tPageManager::LoadLanguage(DataManager::GetStrValue(\"tw_language\"));\n",
+            "\tsm_beacon(\"155\");\n"
             "\tsm_kmsg(\"SM-T583 stage skip-language\");\n",
         ),
+        ("gui_startPage(\"system_readonly\", 1, 1)", "(sm_beacon(\"157\"), 0)"),
         (
             "\tgui_start();\n",
+            "\tsm_beacon(\"156\");\n"
             "\tsm_kmsg(\"SM-T583 stage gui-start\");\n"
             "\tif (gui_start() != 0) {\n"
             "\t\tsm_kmsg(\"SM-T583 stage gui-start failed\");\n"
