@@ -281,7 +281,8 @@ jobs:
           cp "${GITHUB_WORKSPACE}/overrides/init.recovery.usb.rc" "${ANDROID_ROOT}/bootable/recovery/etc/init.recovery.usb.rc"
           mkdir -p recovery/root/sbin
           cp "${GITHUB_WORKSPACE}/overrides/watchdogd.sh" recovery/root/sbin/watchdogd.sh
-          chmod 755 recovery/root/sbin/watchdogd.sh
+          cp "${GITHUB_WORKSPACE}/overrides/usbwait.sh" recovery/root/sbin/usbwait.sh
+          chmod 755 recovery/root/sbin/watchdogd.sh recovery/root/sbin/usbwait.sh
           RC="${ANDROID_ROOT}/bootable/recovery/etc/init.rc"
           if [ ! -f "$RC" ]; then
             echo "::error::init.rc 를 찾지 못했습니다: $RC"
@@ -492,16 +493,20 @@ jobs:
             echo "::error::ep1 대기는 디스크립터가 쓰이기 전에 gadget 을 켭니다."
             exit 1
           fi
-          if ! grep -q 'exec /sbin/toybox sleep 2' "$ROOT/init.recovery.samsungexynos7870.rc"; then
-            echo "::error::adbd 가 디스크립터를 쓰기 전에 gadget 이 켜집니다."
+          if grep -q 'exec /sbin/toybox sleep 2' "$ROOT/init.recovery.samsungexynos7870.rc"; then
+            echo "::error::도메인 없는 toybox 실행은 거부되고 gadget 이 바로 켜집니다."
+            exit 1
+          fi
+          if ! grep -q 'exec u:r:recovery:s0 root root -- /sbin/usbwait.sh' "$ROOT/init.recovery.samsungexynos7870.rc"; then
+            echo "::error::gadget 대기가 recovery 도메인에서 돌지 않습니다."
+            exit 1
+          fi
+          if [ ! -f "$ROOT/sbin/usbwait.sh" ]; then
+            echo "::error::램디스크에 usbwait.sh 가 없습니다."
             exit 1
           fi
           if ! grep -q 'chmod 0666 /dev/usb-ffs/adb/ep0' "$ROOT/init.recovery.samsungexynos7870.rc"; then
             echo "::error::ep0 가 shell 계정에 열려 있지 않습니다."
-            exit 1
-          fi
-          if [ ! -e "$ROOT/sbin/toybox" ]; then
-            echo "::error::램디스크에 toybox 가 없어 USB 대기를 할 수 없습니다."
             exit 1
           fi
           if ! grep -a -q 'SM-T583: wait for functionfs endpoints' "$ROOT/sbin/adbd"; then

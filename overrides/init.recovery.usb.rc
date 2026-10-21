@@ -1,3 +1,3 @@
 # init.rc imports this path. The stock file turns on 18d1:d001 as soon as
 # sys.usb.config becomes adb, before adbd has written functionfs descriptors.
-# The Exynos rc enables 04e8:6860 two seconds after adbd starts.
+# The Exynos rc enables 04e8:6860 after usbwait.sh, which runs as recovery.

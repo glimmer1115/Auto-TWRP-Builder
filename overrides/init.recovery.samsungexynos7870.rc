@@ -5,10 +5,10 @@
 # Importing it again runs on fs twice, and the second pass disables the
 # gadget a few milliseconds after the first pass enables it.
 # This kernel creates /dev/usb-ffs/adb/ep1 only when the gadget is bound.
-# adbd checks ep0 once, after it has dropped to uid shell. A miss there
-# skips USB for the rest of the boot, so ep0 is mode 0666 and adbd is
-# patched to keep trying. The gadget is enabled by init two seconds
-# later, not by sys.usb.ffs.ready, which this adbd never sets.
+# adbd writes the functionfs descriptors, then waits for ep1. Init enables
+# the gadget two seconds later. That wait must run as u:r:recovery:s0.
+# An unlabeled exec of toybox has no SELinux domain, execve is denied,
+# and init enables an empty gadget. adbd never sets sys.usb.ffs.ready.
 # A write to /sys/fs/selinux/enforce returns 0 and the kernel stays enforcing.
 
 on early-init
@@ -50,7 +50,7 @@ on fs
     write /sys/class/android_usb/android0/functions adb
     start watchdogd
     start adbd
-    exec /sbin/toybox sleep 2
+    exec u:r:recovery:s0 root root -- /sbin/usbwait.sh
     write /sys/class/android_usb/android0/enable 1
 
 on boot
