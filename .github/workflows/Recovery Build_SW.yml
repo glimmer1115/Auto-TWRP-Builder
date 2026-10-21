@@ -304,6 +304,7 @@ jobs:
           fi
           python3 "${GITHUB_WORKSPACE}/scripts/patch_bringup.py" --gui "${ANDROID_ROOT}/bootable/recovery/gui/gui.cpp"
           python3 "${GITHUB_WORKSPACE}/scripts/patch_bringup.py" --init-rc "$RC"
+          python3 "${GITHUB_WORKSPACE}/scripts/patch_bringup.py" --crash "${ANDROID_ROOT}/bootable/recovery"
           {
             echo 'TARGET_RECOVERY_PIXEL_FORMAT := "ABGR_8888"'
             echo 'TW_BRIGHTNESS_PATH := "/sys/devices/14800000.dsim/backlight/panel/brightness"'
@@ -426,6 +427,14 @@ jobs:
           fi
           if ! grep -a -q 'SM-T583: settings storage not mounted' "$ROOT/sbin/recovery"; then
             echo "::error::설정 파티션 재시도가 recovery 에 그대로 있습니다."
+            exit 1
+          fi
+          if ! grep -a -q 'SM-T583 stage gui-start' "$ROOT/sbin/recovery"; then
+            echo "::error::크래시 단계 로그가 recovery 에 없습니다."
+            exit 1
+          fi
+          if ! grep -a -q 'SM-T583: theme is not loaded' "$ROOT/sbin/recovery"; then
+            echo "::error::빈 테마 포인터 가드가 recovery 에 없습니다."
             exit 1
           fi
           if grep -q 'restart adbd' "$ROOT/init.rc"; then

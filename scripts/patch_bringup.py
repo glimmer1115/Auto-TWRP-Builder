@@ -85,7 +85,147 @@ def self_test():
     if "start adbd" not in patched:
         raise SystemExit("adbd start missing")
     print("init.rc: restart adbd removed")
+    gui = open(r"C:\twrp-879923a\gui.cpp", encoding="utf-8").read() if __import__("os").path.exists(r"C:\twrp-879923a\gui.cpp") else ""
+    if gui:
+        got = patch_lookup(gui)
+        body = got.split("std::string gui_lookup", 1)[1].split("gui_init", 1)[0]
+        if "GetResources() == NULL" not in body or body.find("== NULL") > body.find("FindString"):
+            raise SystemExit("lookup null check missing")
+        pages = open(r"C:\twrp-879923a\pages.cpp", encoding="utf-8").read()
+        pages = patch_language(pages)
+        if "mCurrentSet->LoadLanguage(xmlFile, NULL);" in pages.split("theme is not loaded", 1)[0].split("LoadLanguage(string", 1)[1]:
+            raise SystemExit("language load still dereferences a null theme")
+        twrp = open(r"C:\twrp-879923a\twrp.cpp", encoding="utf-8").read()
+        twrp = patch_twrp(twrp)
+        for marker in ("SM-T583 stage after-gui-init", "SM-T583 stage resources failed", "SM-T583 stage gui-start failed"):
+            if marker not in twrp:
+                raise SystemExit("missing " + marker)
+        if "\tgui_start();\n" in twrp:
+            raise SystemExit("gui_start still ignores failure")
+        print("crash path: null theme no longer segfaults, stages go to kmsg")
     print("self-test ok")
+
+
+LOOKUP_OLD = (
+    "std::string gui_lookup(const std::string& resource_name, const std::string& default_value) {\n"
+    "\treturn PageManager::GetResources()->FindString(resource_name, default_value);\n"
+    "}\n"
+)
+LOOKUP_NEW = (
+    "std::string gui_lookup(const std::string& resource_name, const std::string& default_value) {\n"
+    "\tif (PageManager::GetResources() == NULL)\n"
+    "\t\treturn default_value;\n"
+    "\treturn PageManager::GetResources()->FindString(resource_name, default_value);\n"
+    "}\n"
+)
+
+LANGUAGE_OLD = (
+    "\tif (xmlFile == NULL)\n"
+    "\t\tLOGERR(\"Unable to load '%s'\\n\", actual_filename.c_str());\n"
+    "\telse {\n"
+    "\t\tmCurrentSet->LoadLanguage(xmlFile, NULL);\n"
+    "\t\tfree(xmlFile);\n"
+    "\t}\n"
+)
+LANGUAGE_NEW = (
+    "\tif (xmlFile == NULL)\n"
+    "\t\tLOGERR(\"Unable to load '%s'\\n\", actual_filename.c_str());\n"
+    "\telse if (mCurrentSet == NULL) {\n"
+    "\t\tLOGERR(\"SM-T583: theme is not loaded, skipping %s\\n\", actual_filename.c_str());\n"
+    "\t\tfree(xmlFile);\n"
+    "\t} else {\n"
+    "\t\tmCurrentSet->LoadLanguage(xmlFile, NULL);\n"
+    "\t\tfree(xmlFile);\n"
+    "\t}\n"
+)
+
+
+def patch_lookup(text):
+    if LOOKUP_OLD not in text:
+        raise SystemExit("gui_lookup 을 찾지 못했습니다.")
+    return text.replace(LOOKUP_OLD, LOOKUP_NEW, 1)
+
+
+def patch_language(text):
+    if LANGUAGE_OLD not in text:
+        raise SystemExit("LoadLanguage 의 테마 호출을 찾지 못했습니다.")
+    text = text.replace(LANGUAGE_OLD, LANGUAGE_NEW, 1)
+    needle = "void PageManager::LoadLanguage(string filename) {\n"
+    insert = (
+        needle
+        + "\t{\n"
+        + "\t\tFILE* kmsg = fopen(\"/dev/kmsg\", \"w\");\n"
+        + "\t\tif (kmsg) {\n"
+        + "\t\t\tfputs(\"SM-T583 stage language\\n\", kmsg);\n"
+        + "\t\t\tfclose(kmsg);\n"
+        + "\t\t}\n"
+        + "\t}\n"
+    )
+    if needle not in text:
+        raise SystemExit("LoadLanguage 함수를 찾지 못했습니다.")
+    return text.replace(needle, insert, 1)
+
+
+def patch_twrp(text):
+    helper = (
+        "static void sm_kmsg(const char *text) {\n"
+        "\tFILE *fp = fopen(\"/dev/kmsg\", \"w\");\n"
+        "\tif (fp) {\n"
+        "\t\tfputs(text, fp);\n"
+        "\t\tfputc('\\n', fp);\n"
+        "\t\tfclose(fp);\n"
+        "\t}\n"
+        "}\n\n"
+    )
+    anchor = "static void Print_Prop(const char *key, const char *name, void *cookie) {\n"
+    if anchor not in text:
+        raise SystemExit("twrp.cpp Print_Prop 을 찾지 못했습니다.")
+    if "static void sm_kmsg(" not in text:
+        text = text.replace(anchor, helper + anchor, 1)
+    replacements = (
+        ("\tgui_init();\n", "\tgui_init();\n\tsm_kmsg(\"SM-T583 stage after-gui-init\");\n"),
+        (
+            "\tgui_loadResources();\n",
+            "\tif (gui_loadResources() != 0)\n"
+            "\t\tsm_kmsg(\"SM-T583 stage resources failed\");\n"
+            "\telse\n"
+            "\t\tsm_kmsg(\"SM-T583 stage resources ok\");\n",
+        ),
+        (
+            "\tPageManager::LoadLanguage(DataManager::GetStrValue(\"tw_language\"));\n",
+            "\tsm_kmsg(\"SM-T583 stage before-language\");\n"
+            "\tPageManager::LoadLanguage(DataManager::GetStrValue(\"tw_language\"));\n",
+        ),
+        (
+            "\tgui_start();\n",
+            "\tsm_kmsg(\"SM-T583 stage gui-start\");\n"
+            "\tif (gui_start() != 0) {\n"
+            "\t\tsm_kmsg(\"SM-T583 stage gui-start failed\");\n"
+            "\t\twhile (true)\n"
+            "\t\t\tsleep(30);\n"
+            "\t}\n",
+        ),
+    )
+    for old, new in replacements:
+        if old not in text:
+            raise SystemExit("twrp.cpp 에서 다음을 찾지 못했습니다: " + old.strip())
+        text = text.replace(old, new, 1)
+    return text
+
+
+def patch_crash(root):
+    import os
+    files = {
+        os.path.join(root, "gui", "gui.cpp"): patch_lookup,
+        os.path.join(root, "gui", "pages.cpp"): patch_language,
+        os.path.join(root, "twrp.cpp"): patch_twrp,
+    }
+    for path, fn in files.items():
+        if not os.path.exists(path):
+            raise SystemExit("없습니다: " + path)
+        text = open(path, encoding="utf-8").read()
+        open(path, "w", encoding="utf-8", newline="\n").write(fn(text))
+    print("테마가 없을 때 언어 로드가 죽지 않게 했고, 단계를 kmsg 에 남깁니다.")
 
 
 if __name__ == "__main__":
@@ -101,5 +241,7 @@ if __name__ == "__main__":
         text = open(path, encoding="utf-8").read()
         open(path, "w", encoding="utf-8", newline="\n").write(patch_init_rc(text))
         print("debuggable 가 adbd 를 죽이지 않게 했습니다.")
+    elif len(sys.argv) == 3 and sys.argv[1] == "--crash":
+        patch_crash(sys.argv[2])
     else:
-        sys.exit("사용법: patch_bringup.py --self-test | --gui FILE | --init-rc FILE")
+        sys.exit("사용법: patch_bringup.py --self-test | --gui FILE | --init-rc FILE | --crash RECOVERY_ROOT")
