@@ -438,9 +438,18 @@ jobs:
               if raw is None or raw[:6] not in (b'070701', b'070702'):
                   sys.exit('램디스크가 gzip cpio 가 아닙니다. 오레오 부트로더는 invalid ramdisk 로 멈춥니다.')
               raw = retarget_linker(raw)
-              out = gzip.compress(raw, compresslevel=9, mtime=0)
-              print('gzip 램디스크 바이트', len(out))
-              return out
+              out = bytearray(gzip.compress(raw, compresslevel=9, mtime=0))
+              # Stock recovery gzip is 1f 8b 08 00 | mtime 0 | xfl 0 | os 3.
+              # Python writes xfl 2 and os 255. This bootloader checks that header.
+              if out[:4] != b'\x1f\x8b\x08\x00':
+                  sys.exit('gzip 헤더 플래그가 0이 아닙니다.')
+              out[8] = 0
+              out[9] = 3
+              isize = struct.unpack_from('<I', out, len(out) - 4)[0]
+              if isize != (len(raw) & 0xFFFFFFFF):
+                  sys.exit('gzip 해제 길이가 cpio 길이와 다릅니다: %d != %d' % (isize, len(raw)))
+              print('gzip 램디스크 바이트', len(out), '해제', isize)
+              return bytes(out)
 
           def parse(d):
               assert d[:8] == b'ANDROID!', '부트 매직이 아닙니다.'
@@ -457,22 +466,42 @@ jobs:
           # Stock kernel bytes + stock DTBH. TWRP ramdisk forced to gzip.
           kernel = st['k']; ramdisk = as_gzip_ramdisk(b['r']); dt = st['dt']
           assert len(kernel) > 0, '순정 커널이 비어 있습니다.'
-          assert ramdisk[:2] == b'\x1f\x8b', '포장된 램디스크가 gzip 이 아닙니다.'
+          assert ramdisk[:10] == bytes.fromhex('1f8b0800000000000003'), 'gzip 헤더가 순정 형식이 아닙니다.'
           print('순정 램디스크 매직', st['r'][:4].hex())
           print('커널', len(kernel), '램디스크', len(ramdisk), 'dt', len(dt))
 
-          hdr = bytearray(stock[:pg])
-          struct.pack_into('<II', hdr, 8, len(kernel), st['ka'])
-          struct.pack_into('<II', hdr, 16, len(ramdisk), st['ra'])
-          struct.pack_into('<II', hdr, 24, 0, st['sa'])
+          PAGE = 2048
+          KERNEL_ADDR = 0x10008000
+          RAMDISK_ADDR = 0x11000000
+          SECOND_ADDR = 0x10F00000
+          TAGS_ADDR = 0x10000100
+          if st['pg'] != PAGE or st['ka'] != KERNEL_ADDR or st['ra'] != RAMDISK_ADDR:
+              sys.exit('순정 헤더 주소가 예상과 다릅니다 page=%s ka=%s ra=%s' % (st['pg'], hex(st['ka']), hex(st['ra'])))
+          if len(dt) != 364544:
+              sys.exit('순정 dt 길이가 364544 가 아닙니다: %d' % len(dt))
+
+          hdr = bytearray(stock[:PAGE])
+          # ramdisk_size is the compressed gzip length, not the cpio length.
+          struct.pack_into('<I', hdr, 8, len(kernel))
+          struct.pack_into('<I', hdr, 12, KERNEL_ADDR)
+          struct.pack_into('<I', hdr, 16, len(ramdisk))
+          struct.pack_into('<I', hdr, 20, RAMDISK_ADDR)
+          struct.pack_into('<I', hdr, 24, 0)
+          struct.pack_into('<I', hdr, 28, SECOND_ADDR)
+          struct.pack_into('<I', hdr, 32, TAGS_ADDR)
+          struct.pack_into('<I', hdr, 36, PAGE)
           struct.pack_into('<I', hdr, 40, len(dt))
+          if hdr[48:61] != b'SRPRA23C001RU':
+              sys.exit('보드 id 가 SRPRA23C001RU 가 아닙니다.')
 
           h = hashlib.sha1()
-          for blob in (kernel, ramdisk, b''):
-              h.update(blob); h.update(struct.pack('<I', len(blob)))
-          if dt:
-              h.update(dt); h.update(struct.pack('<I', len(dt)))
-          hdr[576:608] = h.digest() + b'\0' * 12
+          h.update(kernel); h.update(struct.pack('<I', len(kernel)))
+          h.update(ramdisk); h.update(struct.pack('<I', len(ramdisk)))
+          h.update(b''); h.update(struct.pack('<I', 0))
+          h.update(dt); h.update(struct.pack('<I', len(dt)))
+          hdr[576:596] = h.digest()
+          hdr[596:608] = b'\0' * 12
+          print('램디스크 길이', len(ramdisk), '주소', hex(RAMDISK_ADDR), 'id', hdr[576:596].hex())
 
           up = lambda n: (n + pg - 1) // pg * pg
           pad = lambda x: x + b'\0' * (up(len(x)) - len(x))
