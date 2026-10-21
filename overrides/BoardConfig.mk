@@ -62,18 +62,21 @@ BOARD_SUPPRESS_SECURE_ERASE := true
 
 TARGET_SCREEN_WIDTH := 1200
 TARGET_SCREEN_HEIGHT := 1920
-# TWRP 8.1 maps ABGR_8888 to -DRECOVERY_ABGR, which swaps red and blue.
-# That is the color fix used on the 14800000.dsim panel. BGRA_8888 is the
-# same swap. RGBX_8888 leaves the channels unswapped.
+# Stock fb0 is 32bpp, virtual_size 1200,1920, rotate 0. red_offset and
+# blue_offset are not exposed by this Decon driver, so the channel order
+# stays the 14800000.dsim ABGR fix. TWRP 8.1 maps ABGR_8888 to
+# -DRECOVERY_ABGR, which swaps red and blue.
 TARGET_RECOVERY_PIXEL_FORMAT := "ABGR_8888"
+# fb0 stride is 7680 bytes (1920 pixels) while the visible width is 1200.
+# Line length must come from the framebuffer, not width * 4.
 RECOVERY_GRAPHICS_USE_LINELENGTH := true
 RECOVERY_SDCARD_ON_DATA := true
 
 TW_THEME := portrait_hdpi
 # SM-T580 official TWRP uses the dsim device node, not /sys/class/backlight/panel.
-# The class node leaves this panel lit. Hardware max on that tree is 255.
+# Stock max_brightness on this panel is 306. 255 never reaches full brightness.
 TW_BRIGHTNESS_PATH := "/sys/devices/14800000.dsim/backlight/panel/brightness"
-TW_MAX_BRIGHTNESS := 255
+TW_MAX_BRIGHTNESS := 306
 TW_DEFAULT_BRIGHTNESS := 162
 # fbdev's FBIOBLANK powers this dsim panel down and does not bring the picture back.
 # With the brightness path set, TWRP writes the backlight node instead of blanking.
