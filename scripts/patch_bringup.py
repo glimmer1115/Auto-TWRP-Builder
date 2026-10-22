@@ -942,6 +942,35 @@ def _swap(text, old, new, what):
     return text.replace(old, new, 1)
 
 
+def _line_matches(text, pattern, what):
+    matches = list(re.finditer(pattern, text, re.MULTILINE))
+    if len(matches) != 1:
+        raise SystemExit(
+            "%s: 앵커가 %d 번 나옵니다 (1 번이어야 함): %r" % (what, len(matches), pattern)
+        )
+    return matches[0]
+
+
+def _mark_before_line(text, pattern, code, what):
+    m = _line_matches(text, pattern, what)
+    line = m.group(0)
+    indent = re.match(r"^(\s*)", line).group(1)
+    insert = indent + "sm_mark(%d);\n" % code
+    if insert in text:
+        return text
+    return text[: m.start()] + insert + text[m.start() :]
+
+
+def _mark_after_line(text, pattern, code, what):
+    m = _line_matches(text, pattern, what)
+    line = m.group(0)
+    indent = re.match(r"^(\s*)", line).group(1)
+    suffix = line + "\n" + indent + "sm_mark(%d);\n" % code
+    if suffix in text:
+        return text
+    return text[: m.start()] + suffix + text[m.end() :]
+
+
 def beacon_partition(text):
     if "sm_mark(" in text:
         return text
@@ -970,14 +999,16 @@ def beacon_gui(text):
     if start < 0 or end < 0:
         raise SystemExit("gui.cpp 에서 gui_loadResources 를 찾지 못했습니다.")
     body = text[start:end]
-    body = _swap(body, "\t\ttheme_path += \"/TWRP/theme/ui.zip\";\n",
-                 "\t\tsm_mark(173);\n\t\ttheme_path += \"/TWRP/theme/ui.zip\";\n", "gui.cpp theme path")
-    body = _swap(body, "\t\t\tif (PageManager::LoadPackage(\"TWRP\", TWRES \"ui.xml\", \"main\"))\n",
-                 "\t\t\tsm_mark(174);\n\t\t\tif (PageManager::LoadPackage(\"TWRP\", TWRES \"ui.xml\", \"main\"))\n",
-                 "gui.cpp ui.xml")
-    body = _swap(body, "\t// Set the default package\n\tPageManager::SelectPackage(\"TWRP\");\n",
-                 "\tsm_mark(175);\n\t// Set the default package\n\tPageManager::SelectPackage(\"TWRP\");\n\tsm_mark(176);\n",
-                 "gui.cpp select")
+    theme_line = r'^\s*theme_path\s*\+=\s*"/TWRP/theme/ui\.zip";\s*$'
+    ui_xml_line = (
+        r'^\s*if\s*\(\s*PageManager::LoadPackage\s*\(\s*"TWRP"\s*,\s*TWRES\s*"ui\.xml"\s*,\s*"main"\s*\)\s*\)\s*$'
+    )
+    default_pkg_comment = r'^\s*//\s*Set the default package\s*$'
+    select_twrp = r'^\s*PageManager::SelectPackage\s*\(\s*"TWRP"\s*\);\s*$'
+    body = _mark_before_line(body, theme_line, 173, "gui.cpp theme path")
+    body = _mark_before_line(body, ui_xml_line, 174, "gui.cpp ui.xml")
+    body = _mark_before_line(body, default_pkg_comment, 175, "gui.cpp select")
+    body = _mark_after_line(body, select_twrp, 176, "gui.cpp select")
     return text[:start] + sm_mark_helper("gui") + body + text[end:]
 
 
