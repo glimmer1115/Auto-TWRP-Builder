@@ -320,7 +320,12 @@ jobs:
           print('libminuitwrp 의 fbdev_blank 를 no-op 으로 만들었습니다.')
           PY
           fi
-          python3 "${GITHUB_WORKSPACE}/scripts/patch_bringup.py" --gui "${ANDROID_ROOT}/bootable/recovery/gui/gui.cpp"
+          if [ ! -f "${GITHUB_WORKSPACE}/overrides/bootable/recovery/gui/gui.cpp" ]; then
+            echo "::error::overrides/bootable/recovery/gui/gui.cpp 가 없습니다."
+            exit 1
+          fi
+          cp "${GITHUB_WORKSPACE}/overrides/bootable/recovery/gui/gui.cpp" "${ANDROID_ROOT}/bootable/recovery/gui/gui.cpp"
+          echo "overrides/bootable/recovery/gui/gui.cpp 를 적용했습니다."
           python3 "${GITHUB_WORKSPACE}/scripts/patch_bringup.py" --init-rc "$RC"
           python3 "${GITHUB_WORKSPACE}/scripts/patch_bringup.py" --usb-ffs "${ANDROID_ROOT}/system/core/adb/daemon/usb.cpp"
           python3 "${GITHUB_WORKSPACE}/scripts/patch_bringup.py" --adb-main "${ANDROID_ROOT}/system/core/adb/daemon/main.cpp"

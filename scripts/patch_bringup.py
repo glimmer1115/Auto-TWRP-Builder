@@ -44,12 +44,9 @@ ADB_NEW = "on property:service.adb.root=1\n    start adbd\n"
 
 
 def patch_gui(text):
-    if GUI_OLD not in text:
-        raise SystemExit("gui.cpp 에서 설정 파티션 재시도 블록을 찾지 못했습니다.")
-    updated = text.replace(GUI_OLD, GUI_NEW, 1)
-    if "Mount_Settings_Storage(true)" in updated.split("gui_loadResources", 1)[-1].split("gui_loadCustomResources", 1)[0]:
-        raise SystemExit("gui_loadResources 에 오류 창을 띄우는 마운트가 남아 있습니다.")
-    return updated
+    # gui.cpp is vendored at overrides/bootable/recovery/gui/gui.cpp (build 89 beacons,
+    # settings mount bypass, splash skip). CI copies that file; do not mutate gui here.
+    return text
 
 
 def patch_init_rc(text):
@@ -363,10 +360,16 @@ def simulate_beacons89():
         print("beacons89: source snapshots are missing, skipped")
         return
     src = {k: open(os.path.join(snap, v), encoding="utf-8").read() for k, v in names.items()}
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    vendored_gui = os.path.join(repo_root, "overrides", "bootable", "recovery", "gui", "gui.cpp")
+    if os.path.exists(vendored_gui):
+        gui_out = open(vendored_gui, encoding="utf-8").read()
+    else:
+        gui_out = beacon_gui(patch_gui_cpp(patch_gui(src["gui"])))
     out = {
         "pages": patch_pages_full(src["pages"]),
         "part": patch_partition_full(src["part"]),
-        "gui": beacon_gui(patch_gui_cpp(patch_gui(src["gui"]))),
+        "gui": gui_out,
         "res": beacon_resources(src["res"]),
         "twrp": patch_twrp(src["twrp"]),
     }
@@ -1015,23 +1018,8 @@ def beacon_partition(text):
 
 
 def beacon_gui(text):
-    if "sm_mark(" in text:
-        return text
-    start = text.find("extern \"C\" int gui_loadResources(void)")
-    end = text.find("extern \"C\" int gui_loadCustomResources(void)", start)
-    if start < 0 or end < 0:
-        raise SystemExit("gui.cpp 에서 gui_loadResources 를 찾지 못했습니다.")
-    body = text[start:end]
-    ui_xml_line = (
-        r'^\s*if\s*\(\s*PageManager::LoadPackage\s*\(\s*"TWRP"\s*,\s*TWRES\s*"ui\.xml"\s*,\s*"main"\s*\)\s*\)\s*$'
-    )
-    default_pkg_comment = r'^\s*//\s*Set the default package\s*$'
-    select_twrp = r'^\s*PageManager::SelectPackage\s*\(\s*"TWRP"\s*\);\s*$'
-    body = _mark_before_line_contains(body, '"/TWRP/theme/ui.zip"', 173, "gui.cpp theme path")
-    body = _mark_before_line(body, ui_xml_line, 174, "gui.cpp ui.xml")
-    body = _mark_before_line(body, default_pkg_comment, 175, "gui.cpp select")
-    body = _mark_after_line(body, select_twrp, 176, "gui.cpp select")
-    return text[:start] + sm_mark_helper("gui") + body + text[end:]
+    # Pre-applied in overrides/bootable/recovery/gui/gui.cpp
+    return text
 
 
 def beacon_pages(text):
@@ -1116,7 +1104,7 @@ def patch_pages_full(text):
 
 
 def patch_gui_full(text):
-    return beacon_gui(patch_gui_cpp(text))
+    return text
 
 
 def patch_partition_full(text):
@@ -1126,7 +1114,6 @@ def patch_partition_full(text):
 def patch_crash(root):
     import os
     files = {
-        os.path.join(root, "gui", "gui.cpp"): patch_gui_full,
         os.path.join(root, "gui", "pages.cpp"): patch_pages_full,
         os.path.join(root, "gui", "resources.cpp"): beacon_resources,
         os.path.join(root, "twrp.cpp"): patch_twrp,
@@ -1145,10 +1132,7 @@ if __name__ == "__main__":
     if len(sys.argv) == 2 and sys.argv[1] == "--self-test":
         self_test()
     elif len(sys.argv) == 3 and sys.argv[1] == "--gui":
-        path = sys.argv[2]
-        text = open(path, encoding="utf-8").read()
-        open(path, "w", encoding="utf-8", newline="\n").write(patch_gui(text))
-        print("설정 파티션 오류 창을 테마 로드 전에 띄우지 않습니다.")
+        print("gui.cpp: vendored override — patch_bringup --gui skipped.")
     elif len(sys.argv) == 3 and sys.argv[1] == "--init-rc":
         path = sys.argv[2]
         text = open(path, encoding="utf-8").read()
