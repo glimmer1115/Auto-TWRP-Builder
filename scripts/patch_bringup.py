@@ -951,6 +951,29 @@ def _line_matches(text, pattern, what):
     return matches[0]
 
 
+def _line_contains_once(text, needle, what):
+    hits = []
+    pos = 0
+    for line in text.splitlines(keepends=True):
+        if needle in line:
+            hits.append((pos, line))
+        pos += len(line)
+    if len(hits) != 1:
+        raise SystemExit(
+            "%s: 앵커가 %d 번 나옵니다 (1 번이어야 함): %r" % (what, len(hits), needle)
+        )
+    return hits[0]
+
+
+def _mark_before_line_contains(text, needle, code, what):
+    start, line = _line_contains_once(text, needle, what)
+    indent = line[: len(line) - len(line.lstrip())]
+    insert = indent + "sm_mark(%d);\n" % code
+    if insert in text:
+        return text
+    return text[:start] + insert + text[start:]
+
+
 def _mark_before_line(text, pattern, code, what):
     m = _line_matches(text, pattern, what)
     line = m.group(0)
@@ -999,13 +1022,12 @@ def beacon_gui(text):
     if start < 0 or end < 0:
         raise SystemExit("gui.cpp 에서 gui_loadResources 를 찾지 못했습니다.")
     body = text[start:end]
-    theme_line = r'^\s*theme_path\s*\+=\s*"/TWRP/theme/ui\.zip";\s*$'
     ui_xml_line = (
         r'^\s*if\s*\(\s*PageManager::LoadPackage\s*\(\s*"TWRP"\s*,\s*TWRES\s*"ui\.xml"\s*,\s*"main"\s*\)\s*\)\s*$'
     )
     default_pkg_comment = r'^\s*//\s*Set the default package\s*$'
     select_twrp = r'^\s*PageManager::SelectPackage\s*\(\s*"TWRP"\s*\);\s*$'
-    body = _mark_before_line(body, theme_line, 173, "gui.cpp theme path")
+    body = _mark_before_line_contains(body, '"/TWRP/theme/ui.zip"', 173, "gui.cpp theme path")
     body = _mark_before_line(body, ui_xml_line, 174, "gui.cpp ui.xml")
     body = _mark_before_line(body, default_pkg_comment, 175, "gui.cpp select")
     body = _mark_after_line(body, select_twrp, 176, "gui.cpp select")
