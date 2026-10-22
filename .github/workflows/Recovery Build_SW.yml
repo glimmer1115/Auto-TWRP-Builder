@@ -486,6 +486,12 @@ jobs:
             echo "::error::테마 로드 전 파티션 용량 검사가 그대로입니다."
             exit 1
           fi
+          for tag in 'SM-T583 stage beacon89 partition-log-done' 'SM-T583 beacon89 part' 'SM-T583 beacon89 gui' 'SM-T583 beacon89 pages' 'SM-T583 beacon89 res'; do
+            if ! grep -a -q "$tag" "$ROOT/sbin/recovery"; then
+              echo "::error::빌드 89 디버그 비콘이 recovery 에 없습니다: $tag"
+              exit 1
+            fi
+          done
           if grep -q 'restart adbd' "$ROOT/init.rc"; then
             echo "::error::init.rc 가 adbd 를 다시 죽입니다."
             exit 1

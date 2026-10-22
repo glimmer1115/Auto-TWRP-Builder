@@ -234,6 +234,7 @@ def self_test():
         raise SystemExit("unlabeled toybox exec is denied and enables the gadget immediately")
     if min(chmod_at, func_at, start_at, sleep_at, enable_at) < 0 or not (chmod_at < func_at < start_at < sleep_at < enable_at):
         raise SystemExit("gadget enable is not after adbd has had time to write descriptors")
+    simulate_misc_bcb()
     simulate_gadget_enable()
     if "idProduct D001" in usb or "enable 1" in usb:
         raise SystemExit("imported usb rc still enables the gadget")
@@ -316,7 +317,7 @@ def self_test():
             raise SystemExit("language load or fopen kmsg remains")
         if "open(\"/dev/kmsg\", O_WRONLY | O_CLOEXEC)" not in twrp:
             raise SystemExit("kmsg open flags missing")
-        for marker in ("sm_beacon(\"151\")", "sm_beacon(\"149\")", "sm_beacon(\"153\")", "sm_beacon(\"154\")", "sm_beacon(\"155\")", "sm_beacon(\"156\")", "sm_beacon(\"157\")", "sm_beacon(\"158\")", "signal(SIGSEGV, sm_fault)", "/cache/recovery/sm-stage"):
+        for marker in ("sm_beacon(\"151\")", "sm_beacon(\"149\")", "sm_beacon(\"153\")", "sm_beacon(\"154\")", "sm_beacon(\"155\")", "sm_beacon(\"156\")", "sm_beacon(\"157\")", "sm_beacon(\"158\")", "sigaction(SIGSEGV, &sa, NULL)", "sm_beacon(\"170\")", "sm_beacon(\"171\")", "/cache/recovery/sm-stage"):
             if marker not in twrp:
                 raise SystemExit("missing " + marker)
         tw90_path = r"C:\twrp-879923a\twrp-90.cpp"
@@ -347,7 +348,61 @@ def self_test():
         if data.count("Set_Brightness(GetStrValue(\"tw_brightness\"))") != 1:
             raise SystemExit("startup brightness write was removed")
         print("crash path: language load and late brightness write removed, kmsg uses open")
+    simulate_beacons89()
     print("self-test ok")
+
+
+def simulate_beacons89():
+    import os
+    snap = r"C:\twrp-879923a"
+    names = {
+        "pages": "pages.cpp", "part": "partitionmanager.cpp", "gui": "gui.cpp",
+        "res": "resources81.cpp", "twrp": "twrp.cpp",
+    }
+    if not all(os.path.exists(os.path.join(snap, n)) for n in names.values()):
+        print("beacons89: source snapshots are missing, skipped")
+        return
+    src = {k: open(os.path.join(snap, v), encoding="utf-8").read() for k, v in names.items()}
+    out = {
+        "pages": patch_pages_full(src["pages"]),
+        "part": patch_partition_full(src["part"]),
+        "gui": beacon_gui(patch_gui_cpp(patch_gui(src["gui"]))),
+        "res": beacon_resources(src["res"]),
+        "twrp": patch_twrp(src["twrp"]),
+    }
+    import re as _re
+    seen = {}
+    for key, text in out.items():
+        codes = [int(c) for c in _re.findall(r"sm_mark\((\d+)\)", text)]
+        codes += [int(c) for c in _re.findall(r"sm_beacon\(\"(\d+)\"\)", text)]
+        for c in codes:
+            if not 0 <= c <= 306:
+                raise SystemExit("beacon code out of range: %d" % c)
+            if c == 100 or 250 <= c <= 295:
+                raise SystemExit("beacon code collides with the fault codes: %d" % c)
+            seen.setdefault(c, set()).add(key)
+    for c, keys in sorted(seen.items()):
+        if len(keys) > 1:
+            raise SystemExit("beacon code %d is used by %s" % (c, sorted(keys)))
+    want = {
+        "twrp": [149, 170, 171, 153],
+        "gui": [173, 174, 175, 176],
+        "pages": list(range(210, 230)),
+        "res": [232, 234, 236, 238, 239, 240, 241, 242, 243],
+        "part": [179],
+    }
+    for key, codes in want.items():
+        for c in codes:
+            if key not in seen.get(c, ()):
+                raise SystemExit("beacon %d is missing from %s" % (c, key))
+    for key, tag in (("pages", "pages"), ("part", "part"), ("gui", "gui"), ("res", "res")):
+        if "SM-T583 beacon89 " + tag not in out[key]:
+            raise SystemExit("beacon89 tag missing in " + key)
+    if out["part"].count("sm_mark(180 + (sm_i++ % 30))") != 1:
+        raise SystemExit("per-partition beacon missing")
+    if "signal(SIGSEGV, sm_fault)" in out["twrp"] or "sm_install_faults();" not in out["twrp"]:
+        raise SystemExit("fault handler was not switched to sigaction")
+    print("beacons89: %d distinct codes, one owner each, all inside 0..306" % len(seen))
 
 
 LOOKUP_OLD = (
@@ -431,16 +486,7 @@ def patch_twrp(text):
         "\t\tclose(fd);\n"
         "\t}\n"
         "}\n"
-        "static void sm_fault(int sig) {\n"
-        "\t(void)sig;\n"
-        "\tint fd = open(sm_bright, O_WRONLY | O_CLOEXEC);\n"
-        "\tif (fd >= 0) {\n"
-        "\t\twrite(fd, \"100\", 3);\n"
-        "\t\tclose(fd);\n"
-        "\t}\n"
-        "\tfor (;;)\n"
-        "\t\tsleep(30);\n"
-        "}\n"
+        + FAULT_HELPER +
         "static void sm_kmsg(const char *text) {\n"
         "\tint fd = open(\"/dev/kmsg\", O_WRONLY | O_CLOEXEC);\n"
         "\tif (fd >= 0) {\n"
@@ -459,12 +505,17 @@ def patch_twrp(text):
     if "#include <fcntl.h>\n" not in text:
         text = text.replace("#include <unistd.h>\n", "#include <unistd.h>\n#include <fcntl.h>\n", 1)
     if "static void sm_kmsg(" not in text:
-        text = text.replace(anchor, helper + anchor, 1)
+        text = text.replace(
+            anchor,
+            "#include <signal.h>\n#include <string.h>\n#include <ucontext.h>\n\n" + helper + anchor,
+            1,
+        )
     replacements = (
-        ("\tsignal(SIGPIPE, SIG_IGN);\n", "\tsignal(SIGPIPE, SIG_IGN);\n\tsignal(SIGSEGV, sm_fault);\n\tsignal(SIGBUS, sm_fault);\n\tsignal(SIGABRT, sm_fault);\n"),
+        ("\tsignal(SIGPIPE, SIG_IGN);\n", "\tsignal(SIGPIPE, SIG_IGN);\n\tsm_install_faults();\n"),
         ("\tgui_init();\n", "\tgui_init();\n\tsm_beacon(\"151\");\n\tsm_kmsg(\"SM-T583 stage after-gui-init\");\n"),
         (
             "\tgui_loadResources();\n",
+            "\tsm_beacon(\"171\");\n"
             "\tif (gui_loadResources() != 0)\n"
             "\t\tsm_kmsg(\"SM-T583 stage resources failed\");\n"
             "\telse\n"
@@ -494,7 +545,17 @@ def patch_twrp(text):
             raise SystemExit("twrp.cpp 에서 다음을 찾지 못했습니다: " + old.strip())
         text = text.replace(old, new, 1)
     text = skip_sar(text)
-    return mark_fstab(text)
+    return add_main_beacons(mark_fstab(text))
+
+
+def add_main_beacons(text):
+    # Build 88 stopped between beacon 149 (before Output_Partition_Logging)
+    # and 153 (after gui_loadResources). 170 means the partition dump finished.
+    old = "\tsm_beacon(\"149\");\n\tPartitionManager.Output_Partition_Logging();\n"
+    new = old + "\tsm_beacon(\"170\");\n\tsm_kmsg(\"SM-T583 stage beacon89 partition-log-done\");\n"
+    if old not in text:
+        raise SystemExit("twrp.cpp 에서 149 비콘과 Output_Partition_Logging 을 찾지 못했습니다.")
+    return text.replace(old, new, 1)
 
 
 def skip_sar(text):
@@ -713,6 +774,57 @@ def patch_fbdev(text):
     return text
 
 
+MISC_BCB_OLD = (
+    "    if (!read_bootloader_message(&boot, &err)) {\n"
+    "        printf(\"%s\\n\", err.c_str());\n"
+    "        // If fails, leave a zeroed bootloader_message.\n"
+    "        memset(&boot, 0, sizeof(boot));\n"
+    "    }\n"
+    "    //stage = strndup(boot.stage, sizeof(boot.stage));\n"
+)
+MISC_BCB_NEW = (
+    "    if (!read_bootloader_message(&boot, &err)) {\n"
+    "        printf(\"%s\\n\", err.c_str());\n"
+    "        // If fails, leave a zeroed bootloader_message.\n"
+    "        memset(&boot, 0, sizeof(boot));\n"
+    "    }\n"
+    "    if (*argc <= 1) {\n"
+    "        clear_bootloader_message(&err);\n"
+    "        memset(&boot, 0, sizeof(boot));\n"
+    "        unlink(COMMAND_FILE);\n"
+    "        printf(\"SM-T583: cleared stale misc BCB\\n\");\n"
+    "    }\n"
+    "    //stage = strndup(boot.stage, sizeof(boot.stage));\n"
+)
+
+
+def patch_misc_bcb(text):
+    if MISC_BCB_OLD not in text:
+        raise SystemExit("bootloader_message_twrp get_args BCB read block was not found")
+    updated = text.replace(MISC_BCB_OLD, MISC_BCB_NEW, 1)
+    if updated.count("SM-T583: cleared stale misc BCB") != 1:
+        raise SystemExit("misc BCB clear marker was not patched")
+    return updated
+
+
+def simulate_misc_bcb():
+    # Samsung stock recovery logs just_reboot_after_update and exits; that
+    # string is not in TWRP. Stale /misc BCB or /cache/recovery/command can
+    # still make TWRP run a one-shot install or wipe before the UI stays up.
+    sample = (
+        "void\n"
+        "get_args(int *argc, char ***argv) {\n"
+        "    bootloader_message boot = {};\n"
+        "    std::string err;\n"
+        + MISC_BCB_OLD
+        + "}\n"
+    )
+    patched = patch_misc_bcb(sample)
+    if "clear_bootloader_message" not in patched or "unlink(COMMAND_FILE)" not in patched:
+        raise SystemExit("misc BCB clear did not compile")
+    print("sim: idle TWRP boot clears misc BCB and drops /cache/recovery/command")
+
+
 def simulate_panel_draw():
     # This panel reports red.offset 16. Omni 8.1 pixelflinger faults the first
     # theme blit when the draw buffer is BGRA, after gr_init has already
@@ -728,14 +840,245 @@ def simulate_panel_draw():
     print("sim: red.offset 16 uses RGBA drawing and swaps into the panel")
 
 
+# Brightness codes written by the build 89 beacons. The panel driver logs every
+# write as "dsim_panel_set_brightness: N", so the last code before 100 in
+# /proc/last_kmsg tells where recovery died. /dev/kmsg strings never showed up
+# in build 88, so numbers are the only channel that is known to work.
+#   149 before Output_Partition_Logging   170 after it   171 before gui_loadResources
+#   180+i  partition i of Output_Partition_Logging
+#   173 theme zip path   174 before ui.xml LoadPackage   175 LoadPackage ok   176 package selected
+#   210..221 PageManager::LoadPackage   222..229 PageSet::Load
+#   10+n resource number   232/234/236 font/image/animation start   238 resources done
+#   239/240 before/after gr_ttf_loadFont   241/242/243 image load/scale/done
+#   100 fault, then 260+signal, 250 + fault address (8 hex digits, 280+digit),
+#   252 + pc, 254 + lr, 256 end
+FAULT_HELPER = (
+    "static char sm_altstack[16384];\n"
+    "static void sm_put(int v) {\n"
+    "\tchar b[4];\n"
+    "\tint n = 0;\n"
+    "\tif (v >= 100)\n"
+    "\t\tb[n++] = '0' + (v / 100) % 10;\n"
+    "\tb[n++] = '0' + (v / 10) % 10;\n"
+    "\tb[n++] = '0' + v % 10;\n"
+    "\tint fd = open(sm_bright, O_WRONLY | O_CLOEXEC);\n"
+    "\tif (fd >= 0) {\n"
+    "\t\twrite(fd, b, n);\n"
+    "\t\tclose(fd);\n"
+    "\t}\n"
+    "}\n"
+    "static void sm_hex(unsigned int v) {\n"
+    "\tfor (int i = 7; i >= 0; --i)\n"
+    "\t\tsm_put(280 + (int)((v >> (i * 4)) & 0xf));\n"
+    "}\n"
+    "static void sm_fault(int sig, siginfo_t *info, void *ctx) {\n"
+    "\tsm_put(100);\n"
+    "\tsm_put(260 + (sig & 15));\n"
+    "\tsm_put(250);\n"
+    "\tsm_hex(info ? (unsigned int)(unsigned long)info->si_addr : 0);\n"
+    "\t(void)ctx;\n"
+    "#if defined(__arm__)\n"
+    "\tif (ctx) {\n"
+    "\t\tucontext_t *uc = (ucontext_t *)ctx;\n"
+    "\t\tsm_put(252);\n"
+    "\t\tsm_hex((unsigned int)uc->uc_mcontext.arm_pc);\n"
+    "\t\tsm_put(254);\n"
+    "\t\tsm_hex((unsigned int)uc->uc_mcontext.arm_lr);\n"
+    "\t}\n"
+    "#endif\n"
+    "\tsm_put(256);\n"
+    "\tfor (;;)\n"
+    "\t\tsleep(30);\n"
+    "}\n"
+    "static void sm_install_faults(void) {\n"
+    "\tstack_t ss;\n"
+    "\tmemset(&ss, 0, sizeof(ss));\n"
+    "\tss.ss_sp = sm_altstack;\n"
+    "\tss.ss_size = sizeof(sm_altstack);\n"
+    "\tsigaltstack(&ss, NULL);\n"
+    "\tstruct sigaction sa;\n"
+    "\tmemset(&sa, 0, sizeof(sa));\n"
+    "\tsa.sa_sigaction = sm_fault;\n"
+    "\tsa.sa_flags = SA_SIGINFO | SA_ONSTACK;\n"
+    "\tsigemptyset(&sa.sa_mask);\n"
+    "\tsigaction(SIGSEGV, &sa, NULL);\n"
+    "\tsigaction(SIGBUS, &sa, NULL);\n"
+    "\tsigaction(SIGABRT, &sa, NULL);\n"
+    "\tsigaction(SIGILL, &sa, NULL);\n"
+    "\tsigaction(SIGFPE, &sa, NULL);\n"
+    "}\n"
+)
+
+
+def sm_mark_helper(tag):
+    # The volatile read keeps the tag string in the binary so the workflow can
+    # grep for it. Nothing sets the flag.
+    return (
+        "#include <fcntl.h>\n"
+        "#include <stdio.h>\n"
+        "#include <unistd.h>\n"
+        "static volatile int sm_mark_dbg;\n"
+        "static void sm_mark(int v) {\n"
+        "\tchar b[4];\n"
+        "\tint n = 0;\n"
+        "\tif (sm_mark_dbg)\n"
+        "\t\tprintf(\"SM-T583 beacon89 " + tag + "\\n\");\n"
+        "\tif (v >= 100)\n"
+        "\t\tb[n++] = '0' + (v / 100) % 10;\n"
+        "\tb[n++] = '0' + (v / 10) % 10;\n"
+        "\tb[n++] = '0' + v % 10;\n"
+        "\tint fd = open(\"/sys/devices/14800000.dsim/backlight/panel/brightness\", O_WRONLY | O_CLOEXEC);\n"
+        "\tif (fd >= 0) {\n"
+        "\t\twrite(fd, b, n);\n"
+        "\t\tclose(fd);\n"
+        "\t}\n"
+        "}\n\n"
+    )
+
+
+def _swap(text, old, new, what):
+    if text.count(old) != 1:
+        raise SystemExit("%s: 앵커가 %d 번 나옵니다 (1 번이어야 함): %r" % (what, text.count(old), old[:70]))
+    return text.replace(old, new, 1)
+
+
+def beacon_partition(text):
+    if "sm_mark(" in text:
+        return text
+    anchor = "void TWPartitionManager::Output_Partition_Logging(void) {\n"
+    text = _swap(text, anchor, sm_mark_helper("part") + anchor, "partitionmanager.cpp")
+    text = _swap(
+        text,
+        "\tfor (iter = Partitions.begin(); iter != Partitions.end(); iter++)\n"
+        "\t\tOutput_Partition((*iter));\n",
+        "\tint sm_i = 0;\n"
+        "\tfor (iter = Partitions.begin(); iter != Partitions.end(); iter++) {\n"
+        "\t\tsm_mark(180 + (sm_i++ % 30));\n"
+        "\t\tOutput_Partition((*iter));\n"
+        "\t}\n"
+        "\tsm_mark(179);\n",
+        "partitionmanager.cpp loop",
+    )
+    return text
+
+
+def beacon_gui(text):
+    if "sm_mark(" in text:
+        return text
+    start = text.find("extern \"C\" int gui_loadResources(void)")
+    end = text.find("extern \"C\" int gui_loadCustomResources(void)", start)
+    if start < 0 or end < 0:
+        raise SystemExit("gui.cpp 에서 gui_loadResources 를 찾지 못했습니다.")
+    body = text[start:end]
+    body = _swap(body, "\t\ttheme_path += \"/TWRP/theme/ui.zip\";\n",
+                 "\t\tsm_mark(173);\n\t\ttheme_path += \"/TWRP/theme/ui.zip\";\n", "gui.cpp theme path")
+    body = _swap(body, "\t\t\tif (PageManager::LoadPackage(\"TWRP\", TWRES \"ui.xml\", \"main\"))\n",
+                 "\t\t\tsm_mark(174);\n\t\t\tif (PageManager::LoadPackage(\"TWRP\", TWRES \"ui.xml\", \"main\"))\n",
+                 "gui.cpp ui.xml")
+    body = _swap(body, "\t// Set the default package\n\tPageManager::SelectPackage(\"TWRP\");\n",
+                 "\tsm_mark(175);\n\t// Set the default package\n\tPageManager::SelectPackage(\"TWRP\");\n\tsm_mark(176);\n",
+                 "gui.cpp select")
+    return text[:start] + sm_mark_helper("gui") + body + text[end:]
+
+
+def beacon_pages(text):
+    if "sm_mark(" in text:
+        return text
+    anchor = "LoadingContext* PageManager::currentLoadingContext = NULL;\n"
+    text = _swap(text, anchor, anchor + "\n" + sm_mark_helper("pages"), "pages.cpp helper")
+    steps = (
+        ("\tmReloadTheme = false;\n\tmStartPage = startpage;\n",
+         "\tsm_mark(210);\n\tmReloadTheme = false;\n\tmStartPage = startpage;\n"),
+        ("\t\t\tLoadLanguageList(NULL);\n",
+         "\t\t\tsm_mark(211);\n\t\t\tLoadLanguageList(NULL);\n\t\t\tsm_mark(212);\n"),
+        ("\tpageSet = mCurrentSet;\n\tmCurrentSet = new PageSet();\n",
+         "\tsm_mark(213);\n\tpageSet = mCurrentSet;\n\tmCurrentSet = new PageSet();\n\tsm_mark(214);\n"),
+        ("\tif (baseLanguageFile) {\n",
+         "\tsm_mark(215);\n\tif (baseLanguageFile) {\n"),
+        ("\tif (languageFile) {\n\t\tmCurrentSet->LoadLanguage(languageFile, ctx.zip);\n\t\tfree(languageFile);\n\t}\n",
+         "\tif (languageFile) {\n\t\tsm_mark(216);\n\t\tmCurrentSet->LoadLanguage(languageFile, ctx.zip);\n"
+         "\t\tsm_mark(217);\n\t\tfree(languageFile);\n\t}\n"),
+        ("\tret = mCurrentSet->Load(ctx, mainxmlfilename);\n",
+         "\tsm_mark(218);\n\tret = mCurrentSet->Load(ctx, mainxmlfilename);\n\tsm_mark(219);\n"),
+        ("\t\tmCurrentSet->SetPage(startpage);\n",
+         "\t\tsm_mark(220);\n\t\tmCurrentSet->SetPage(startpage);\n\t\tsm_mark(221);\n"),
+        ("\tdoc->parse<0>(xmlbuffer);\n",
+         "\tsm_mark(222);\n\tdoc->parse<0>(xmlbuffer);\n\tsm_mark(223);\n"),
+        ("\tif (isMain) {\n\t\tint rc = LoadDetails(ctx, root);\n",
+         "\tsm_mark(229);\n\tif (isMain) {\n\t\tint rc = LoadDetails(ctx, root);\n"),
+        ("\tLOGINFO(\"Loading resources...\\n\");\n",
+         "\tsm_mark(224);\n\tLOGINFO(\"Loading resources...\\n\");\n"),
+        ("\tLOGINFO(\"Loading variables...\\n\");\n",
+         "\tsm_mark(225);\n\tLOGINFO(\"Loading variables...\\n\");\n"),
+        ("\tLOGINFO(\"Loading mouse cursor...\\n\");\n",
+         "\tsm_mark(226);\n\tLOGINFO(\"Loading mouse cursor...\\n\");\n"),
+        ("\tLOGINFO(\"Loading pages...\\n\");\n",
+         "\tsm_mark(227);\n\tLOGINFO(\"Loading pages...\\n\");\n"),
+        ("\t// process includes recursively\n",
+         "\tsm_mark(228);\n\t// process includes recursively\n"),
+    )
+    for old, new in steps:
+        text = _swap(text, old, new, "pages.cpp")
+    return text
+
+
+def beacon_resources(text):
+    if "sm_mark(" in text:
+        return text
+    anchor = "int Resource::ExtractResource("
+    text = _swap(text, anchor, sm_mark_helper("res") + "static int sm_res_idx;\n\n" + anchor, "resources.cpp helper")
+    steps = (
+        ("\t\t\tmFont = gr_ttf_loadFont(tmpname.c_str(), font_size, dpi);\n",
+         "\t\t\tsm_mark(239);\n\t\t\tmFont = gr_ttf_loadFont(tmpname.c_str(), font_size, dpi);\n\t\t\tsm_mark(240);\n"),
+        ("\t\t\tmFont = gr_ttf_loadFont(file.c_str(), font_size, dpi);\n",
+         "\t\t\tsm_mark(239);\n\t\t\tmFont = gr_ttf_loadFont(file.c_str(), font_size, dpi);\n\t\t\tsm_mark(240);\n"),
+        ("\tLoadImage(pZip, file, &temp_surface);\n\tCheckAndScaleImage(temp_surface, &mSurface, retain_aspect);\n",
+         "\tsm_mark(241);\n\tLoadImage(pZip, file, &temp_surface);\n\tsm_mark(242);\n"
+         "\tCheckAndScaleImage(temp_surface, &mSurface, retain_aspect);\n\tsm_mark(243);\n"),
+        ("\t\t\tFontResource* res = new FontResource(child, pZip);\n",
+         "\t\t\tsm_mark(232);\n\t\t\tsm_mark(10 + (sm_res_idx++ % 90));\n"
+         "\t\t\tFontResource* res = new FontResource(child, pZip);\n"),
+        ("\t\t\tImageResource* res = new ImageResource(child, pZip);\n",
+         "\t\t\tsm_mark(234);\n\t\t\tsm_mark(10 + (sm_res_idx++ % 90));\n"
+         "\t\t\tImageResource* res = new ImageResource(child, pZip);\n"),
+        ("\t\t\tAnimationResource* res = new AnimationResource(child, pZip);\n",
+         "\t\t\tsm_mark(236);\n\t\t\tsm_mark(10 + (sm_res_idx++ % 90));\n"
+         "\t\t\tAnimationResource* res = new AnimationResource(child, pZip);\n"),
+    )
+    for old, new in steps:
+        text = _swap(text, old, new, "resources.cpp")
+    # End of LoadResources: the loop closes right before the function ends.
+    head, sep, tail = text.partition("void ResourceManager::LoadResources(")
+    if not sep:
+        raise SystemExit("resources.cpp 에서 LoadResources 를 찾지 못했습니다.")
+    close = tail.find("\n}\n")
+    if close < 0:
+        raise SystemExit("resources.cpp 에서 LoadResources 의 끝을 찾지 못했습니다.")
+    tail = tail[:close] + "\n\tsm_mark(238);" + tail[close:]
+    return head + sep + tail
+
+
+def patch_pages_full(text):
+    return beacon_pages(patch_language(text))
+
+
+def patch_gui_full(text):
+    return beacon_gui(patch_gui_cpp(text))
+
+
+def patch_partition_full(text):
+    return beacon_partition(patch_partition(text))
+
+
 def patch_crash(root):
     import os
     files = {
-        os.path.join(root, "gui", "gui.cpp"): patch_gui_cpp,
-        os.path.join(root, "gui", "pages.cpp"): patch_language,
+        os.path.join(root, "gui", "gui.cpp"): patch_gui_full,
+        os.path.join(root, "gui", "pages.cpp"): patch_pages_full,
+        os.path.join(root, "gui", "resources.cpp"): beacon_resources,
         os.path.join(root, "twrp.cpp"): patch_twrp,
         os.path.join(root, "data.cpp"): patch_data,
-        os.path.join(root, "partitionmanager.cpp"): patch_partition,
+        os.path.join(root, "partitionmanager.cpp"): patch_partition_full,
     }
     for path, fn in files.items():
         if not os.path.exists(path):
@@ -776,5 +1119,13 @@ if __name__ == "__main__":
         text = open(path, encoding="utf-8").read()
         open(path, "w", encoding="utf-8", newline="\n").write(patch_fbdev(text))
         print("패널 red.offset 16 은 RGBA 로 그리고 복사할 때 채널을 바꿉니다.")
+    elif len(sys.argv) == 3 and sys.argv[1] == "--misc-bcb":
+        path = sys.argv[2]
+        text = open(path, encoding="utf-8").read()
+        open(path, "w", encoding="utf-8", newline="\n").write(patch_misc_bcb(text))
+        print("TWRP 가 misc BCB 와 /cache/recovery/command 찌꺼기를 지웁니다.")
     else:
-        sys.exit("사용법: patch_bringup.py --self-test | --gui FILE | --init-rc FILE | --usb-ffs FILE | --adb-main FILE | --crash RECOVERY_ROOT | --fbdev FILE")
+        sys.exit(
+            "사용법: patch_bringup.py --self-test | --gui FILE | --init-rc FILE | "
+            "--usb-ffs FILE | --adb-main FILE | --crash RECOVERY_ROOT | --fbdev FILE | --misc-bcb FILE"
+        )
