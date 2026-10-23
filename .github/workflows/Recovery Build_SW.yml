@@ -50,7 +50,7 @@ jobs:
           echo "매니페스트 주소: $MANIFEST_URL"
           echo "매니페스트 브랜치: $MANIFEST_BRANCH"
           echo "빌드 대상: ${BUILD_TARGET}image"
-          echo "리커버리 ABI: armeabi-v7a (순정 init 과 같은 ELF32), 커널 슬롯: Image"
+          echo "리커버리 ABI: ARM32 armeabi-v7a (ELF32 필수), 순정 커널 슬롯: Image"
           echo "같은 브랜치에 이미 실행이 있으면 이전 실행은 취소됩니다. 그 취소는 디스크 오류가 아닙니다."
           echo "::endgroup::"
 
@@ -238,22 +238,20 @@ jobs:
 
           mkdir -p prebuilt recovery/root
           python3 - "$IMG" <<'PY'
-          import struct, sys
+          import hashlib, struct, sys
           d = open(sys.argv[1], 'rb').read()
-          assert d[:8] == b'ANDROID!', '부트 매직이 아닙니다.'
+          assert d[:8] == b'ANDROID!', 'Invalid Android boot image magic.'
           ks, ka, rs, ra, ss, sa, ta, pg, dts = struct.unpack('<9I', d[8:44])
-          assert ks > 0, '커널 크기가 0 입니다.'
+          assert ks > 0, 'Kernel size is zero.'
           kernel = d[pg:pg + ks]
-          if kernel[56:60] == b'ARM\x64':
-              kind = 'arm64 Image 헤더 (순정 커널 바이트)'
-          elif kernel.find(bytes.fromhex('18286f01'), 0, 0x400) >= 0:
-              kind = 'ARM zImage'
-          else:
-              kind = '알 수 없는 커널 형식'
+          assert len(kernel) == ks, 'Kernel data is truncated.'
+          assert kernel[56:60] == b'ARM\x64', 'Expected the stock Exynos 7870 ARM64 Image header.'
+          kind = 'Stock kernel Image (separate from the ARM32 recovery ABI)'
           open('prebuilt/Image', 'wb').write(kernel)
-          print('커널 바이트', ks, '페이지', pg, 'dt', dts)
-          print('판별:', kind)
-          print('순정 커널을 prebuilt/Image 에 저장했습니다.')
+          print('Kernel bytes:', ks, 'page size:', pg, 'dt size:', dts)
+          print('Detected:', kind)
+          print('Kernel SHA-256:', hashlib.sha256(kernel).hexdigest())
+          print('Saved stock kernel to prebuilt/Image.')
           PY
           ls -l prebuilt
           file prebuilt/Image || true
