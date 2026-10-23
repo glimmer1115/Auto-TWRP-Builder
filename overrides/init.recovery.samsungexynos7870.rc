@@ -59,7 +59,7 @@ on boot
     write /sys/class/android_usb/android0/iSerial ${ro.serialno}
     write /sys/class/android_usb/android0/functions adb
     start adbd
-    exec u:r:recovery:s0 root root -- /sbin/usbwait.sh 2
+    exec u:r:recovery:s0 root root -- /sbin/usbwait.sh 4
     write /sys/class/android_usb/android0/enable 1
 
 service watchdogd /sbin/watchdogd.sh

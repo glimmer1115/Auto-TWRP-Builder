@@ -240,8 +240,13 @@ def self_test():
             raise SystemExit("BoardConfig.mk missing setting: " + setting)
     if 'echo "TW_MAX_BRIGHTNESS := 150"' not in workflow:
         raise SystemExit("workflow brightness override is not 150")
-    if not wait.startswith("#!/sbin/sh\n") or 'sleep "${1:-2}"' not in wait:
-        raise SystemExit("usbwait.sh is not the recovery-domain delay")
+    if (
+        not wait.startswith("#!/sbin/sh\n")
+        or 'case "$requested" in' not in wait
+        or "*) timeout=5 ;;" not in wait
+        or 'sleep "$timeout"' not in wait
+    ):
+        raise SystemExit("usbwait.sh does not enforce its five-second maximum")
     if "setprop sys.usb.config=" in rc or "setprop sys.usb.config " in rc or "setprop sys.usb.ffs.ready" in rc:
         raise SystemExit("usb config is forced before adbd writes descriptors")
     if "wait /dev/usb-ffs/adb/ep1" in rc or "on property:sys.usb.ffs.ready=1" in rc:
@@ -259,7 +264,7 @@ def self_test():
     serial_at = boot.find("write /sys/class/android_usb/android0/iSerial ${ro.serialno}")
     func_at = boot.find("write /sys/class/android_usb/android0/functions adb")
     start_at = boot.find("start adbd")
-    descriptor_wait_at = boot.find("/sbin/usbwait.sh 2")
+    descriptor_wait_at = boot.find("/sbin/usbwait.sh 4")
     enable_at = boot.find("write /sys/class/android_usb/android0/enable 1")
     if "exec /sbin/toybox sleep" in rc:
         raise SystemExit("unlabeled toybox exec is denied")
