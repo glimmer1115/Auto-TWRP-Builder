@@ -753,31 +753,10 @@ std::string gui_lookup(const std::string& resource_name, const std::string& defa
 
 extern "C" int gui_init(void)
 {
-	{
-		int fd = open("/sys/devices/14800000.dsim/backlight/panel/brightness", O_WRONLY | O_CLOEXEC);
-		if (fd >= 0) {
-			write(fd, "150", 3);
-			close(fd);
-		}
-	}
 	gr_init();
 	TWFunc::Set_Brightness(DataManager::GetStrValue("tw_brightness"));
 	LOGINFO("SM-T583 skip splash\n");
-	{
-		int fd = open("/sys/devices/14800000.dsim/backlight/panel/brightness", O_WRONLY | O_CLOEXEC);
-		if (fd >= 0) {
-			write(fd, "152", 3);
-			close(fd);
-		}
-	}
 	ev_init();
-	{
-		int fd = open("/sys/devices/14800000.dsim/backlight/panel/brightness", O_WRONLY | O_CLOEXEC);
-		if (fd >= 0) {
-			write(fd, "159", 3);
-			close(fd);
-		}
-	}
 	return 0;
 }
 
@@ -794,7 +773,8 @@ static void sm_mark(int v) {
 		b[n++] = '0' + (v / 100) % 10;
 	b[n++] = '0' + (v / 10) % 10;
 	b[n++] = '0' + v % 10;
-	int fd = open("/sys/devices/14800000.dsim/backlight/panel/brightness", O_WRONLY | O_CLOEXEC);
+	b[n++] = '\n';
+	int fd = open("/cache/recovery/sm-stage", O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644);
 	if (fd >= 0) {
 		write(fd, b, n);
 		close(fd);
