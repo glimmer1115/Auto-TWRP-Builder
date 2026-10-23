@@ -30,7 +30,8 @@ TARGET_KERNEL_HEADER_ARCH := arm64
 TARGET_USES_UNCOMPRESSED_KERNEL := true
 
 BOARD_VENDOR := samsung
-BOARD_KERNEL_CMDLINE := androidboot.selinux=permissive
+BOARD_KERNEL_CMDLINE := androidboot.selinux=permissive androidboot.usbconfig=adb
+TARGET_USE_CONFIGFS := false
 BOARD_KERNEL_BASE := 0x10000000
 BOARD_KERNEL_PAGESIZE := 2048
 BOARD_KERNEL_OFFSET := 0x00008000
@@ -79,10 +80,9 @@ RECOVERY_SDCARD_ON_DATA := true
 
 TW_THEME := portrait_hdpi
 # SM-T580 official TWRP uses the dsim device node, not /sys/class/backlight/panel.
-# Stock max_brightness on this panel is 306. 255 never reaches full brightness.
 TW_BRIGHTNESS_PATH := "/sys/devices/14800000.dsim/backlight/panel/brightness"
-TW_MAX_BRIGHTNESS := 306
-TW_DEFAULT_BRIGHTNESS := 162
+TW_MAX_BRIGHTNESS := 150
+TW_DEFAULT_BRIGHTNESS := 120
 # libguitwrp skips gr_fb_blank when this is set. It does not stop
 # blanktimer from calling Set_Brightness("0"). The 879923a log is still
 # 162, then 0, then 162, then signal 11. TW_NO_SCREEN_TIMEOUT compiles

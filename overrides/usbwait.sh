@@ -1,4 +1,3 @@
 #!/sbin/sh
-# Block init until adbd has written the functionfs descriptors.
-# watchdogd.sh already runs under u:r:recovery:s0 through /sbin/sh.
-sleep 2
+# Delay in the recovery SELinux domain; init has no sleep builtin.
+sleep "${1:-2}"

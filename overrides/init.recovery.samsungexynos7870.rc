@@ -5,8 +5,9 @@
 # Importing it again runs on fs twice, and the second pass disables the
 # gadget a few milliseconds after the first pass enables it.
 # This kernel creates /dev/usb-ffs/adb/ep1 only when the gadget is bound.
-# adbd writes the functionfs descriptors, then waits for ep1. Init enables
-# the gadget two seconds later. That wait must run as u:r:recovery:s0.
+# Boot waits for the panel brightness node, then delays three seconds before
+# starting adbd. Init binds the gadget after descriptors are ready; that wait
+# must run as u:r:recovery:s0.
 # An unlabeled exec of toybox has no SELinux domain, execve is denied,
 # and init enables an empty gadget. adbd never sets sys.usb.ffs.ready.
 # A write to /sys/fs/selinux/enforce returns 0 and the kernel stays enforcing.
@@ -41,6 +42,13 @@ on fs
     chmod 0777 /dev/usb-ffs/adb
     chmod 0666 /dev/usb-ffs/adb/ep0
     write /sys/class/android_usb/android0/enable 0
+    start watchdogd
+
+on boot
+    write /sys/fs/selinux/enforce 0
+    wait /sys/devices/14800000.dsim/backlight/panel/brightness 10
+    exec u:r:recovery:s0 root root -- /sbin/usbwait.sh 3
+    write /sys/class/android_usb/android0/enable 0
     write /sys/class/android_usb/android0/idVendor 04e8
     write /sys/class/android_usb/android0/idProduct 6860
     write /sys/class/android_usb/android0/f_ffs/aliases adb
@@ -48,13 +56,9 @@ on fs
     write /sys/class/android_usb/android0/iProduct SM-T583
     write /sys/class/android_usb/android0/iSerial ${ro.serialno}
     write /sys/class/android_usb/android0/functions adb
-    start watchdogd
     start adbd
-    exec u:r:recovery:s0 root root -- /sbin/usbwait.sh
+    exec u:r:recovery:s0 root root -- /sbin/usbwait.sh 2
     write /sys/class/android_usb/android0/enable 1
-
-on boot
-    write /sys/fs/selinux/enforce 0
 
 service watchdogd /sbin/watchdogd.sh
     class core

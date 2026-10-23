@@ -221,27 +221,36 @@ def self_test():
     if "start adbd" not in patched:
         raise SystemExit("adbd start missing")
     print("init.rc: restart adbd removed")
-    rc_path = r"c:\Auto-TWRP-Builder\overrides\init.recovery.samsungexynos7870.rc"
-    usb_path = r"c:\Auto-TWRP-Builder\overrides\init.recovery.usb.rc"
-    wait_path = r"c:\Auto-TWRP-Builder\overrides\usbwait.sh"
+    rc_path = os.path.join(repo_root, "overrides", "init.recovery.samsungexynos7870.rc")
+    usb_path = os.path.join(repo_root, "overrides", "init.recovery.usb.rc")
+    wait_path = os.path.join(repo_root, "overrides", "usbwait.sh")
     rc = open(rc_path, encoding="utf-8").read()
     usb = open(usb_path, encoding="utf-8").read()
     wait = open(wait_path, encoding="utf-8").read()
-    if not wait.startswith("#!/sbin/sh\n") or "\nsleep 2\n" not in wait:
-        raise SystemExit("usbwait.sh is not the recovery-domain sleep")
+    if not wait.startswith("#!/sbin/sh\n") or 'sleep "${1:-2}"' not in wait:
+        raise SystemExit("usbwait.sh is not the recovery-domain delay")
     if "setprop sys.usb.config=" in rc or "setprop sys.usb.config " in rc or "setprop sys.usb.ffs.ready" in rc:
         raise SystemExit("usb config is forced before adbd writes descriptors")
     if "wait /dev/usb-ffs/adb/ep1" in rc or "on property:sys.usb.ffs.ready=1" in rc:
         raise SystemExit("ep1 does not exist until the gadget is bound")
-    func_at = rc.find("write /sys/class/android_usb/android0/functions adb")
-    start_at = rc.find("start adbd")
-    sleep_at = rc.find("exec u:r:recovery:s0 root root -- /sbin/usbwait.sh")
-    enable_at = rc.find("write /sys/class/android_usb/android0/enable 1")
-    chmod_at = rc.find("chmod 0666 /dev/usb-ffs/adb/ep0")
-    if "exec /sbin/toybox sleep 2" in rc:
-        raise SystemExit("unlabeled toybox exec is denied and enables the gadget immediately")
-    if min(chmod_at, func_at, start_at, sleep_at, enable_at) < 0 or not (chmod_at < func_at < start_at < sleep_at < enable_at):
-        raise SystemExit("gadget enable is not after adbd has had time to write descriptors")
+    boot_at = rc.find("on boot\n")
+    boot = rc[boot_at:] if boot_at >= 0 else ""
+    wait_at = boot.find("wait /sys/devices/14800000.dsim/backlight/panel/brightness")
+    delay_at = boot.find("/sbin/usbwait.sh 3")
+    disable_at = boot.find("write /sys/class/android_usb/android0/enable 0")
+    vendor_at = boot.find("write /sys/class/android_usb/android0/idVendor 04e8")
+    product_at = boot.find("write /sys/class/android_usb/android0/idProduct 6860")
+    func_at = boot.find("write /sys/class/android_usb/android0/functions adb")
+    start_at = boot.find("start adbd")
+    descriptor_wait_at = boot.find("/sbin/usbwait.sh 2")
+    enable_at = boot.find("write /sys/class/android_usb/android0/enable 1")
+    if "exec /sbin/toybox sleep" in rc:
+        raise SystemExit("unlabeled toybox exec is denied")
+    sequence = (wait_at, delay_at, disable_at, vendor_at, product_at, func_at, start_at, descriptor_wait_at, enable_at)
+    if min(sequence) < 0 or sequence != tuple(sorted(sequence)):
+        raise SystemExit("delayed legacy gadget bring-up order is incorrect")
+    if "setprop sys.usb.configfs 0" not in rc:
+        raise SystemExit("configfs is not disabled for the legacy gadget")
     simulate_misc_bcb()
     simulate_gadget_enable()
     if "idProduct D001" in usb or "enable 1" in usb:
@@ -294,7 +303,7 @@ def self_test():
         raise SystemExit("adbd still skips functionfs when ep0 is missing")
     if "}" in patched_main.split("prop_port", 1)[0]:
         raise SystemExit("adbd main patch left the old if-block brace")
-    print("usb: recovery-domain usbwait blocks, then init enables 04e8:6860")
+    print("usb: panel delay and recovery-domain descriptor wait precede legacy gadget enable")
     snap = r"C:\twrp-879923a"
     if __import__("os").path.exists(os.path.join(snap, "pages.cpp")):
         pages = open(os.path.join(snap, "pages.cpp"), encoding="utf-8").read()
