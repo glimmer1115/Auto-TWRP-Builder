@@ -203,6 +203,26 @@ def self_test():
     ):
         if marker not in vgui:
             raise SystemExit("vendored gui.cpp missing marker: " + marker)
+    twrp_sample = (
+        "#include <unistd.h>\n"
+        "static void Print_Prop(const char *key, const char *name, void *cookie) {\n"
+        "\tsignal(SIGPIPE, SIG_IGN);\n"
+        "\tgui_init();\n"
+        "\tgui_loadResources();\n"
+        "\tDataManager::ReadSettingsFile();\n"
+        "\tPageManager::LoadLanguage(DataManager::GetStrValue(\"tw_language\"));\n"
+        "\tgui_startPage(\"system_readonly\", 1, 1);\n"
+        "\tgui_start();\n"
+        "\tif (!PartitionManager.Process_Fstab(fstab_filename, 1, 0)) {\n"
+        "\t}\n"
+        "\tPartitionManager.Output_Partition_Logging();\n"
+    )
+    for helper in (patch_twrp(twrp_sample), FAULT_HELPER, sm_mark_helper("gui")):
+        if "/sys/devices/14800000.dsim/backlight/panel/brightness" in helper:
+            raise SystemExit("debug markers must not write the backlight node")
+        if "/cache/recovery/sm-stage" not in helper:
+            raise SystemExit("debug marker stage-file logging is missing")
+    print("debug markers: write only to sm-stage, never the backlight")
     if not patch_gui_step(vendored_gui, vgui):
         raise SystemExit("patch_gui_step must always succeed")
     print("gui.cpp: patch_bringup does not touch sources; vendored override ok")
@@ -501,18 +521,12 @@ def patch_language(text):
 
 def patch_twrp(text):
     helper = (
-        "static const char sm_bright[] = \"/sys/devices/14800000.dsim/backlight/panel/brightness\";\n"
         "static const char sm_stage[] = \"/cache/recovery/sm-stage\";\n"
         "static void sm_beacon(const char *value) {\n"
         "\tconst char *p = value;\n"
         "\twhile (*p)\n"
         "\t\tp++;\n"
-        "\tint fd = open(sm_bright, O_WRONLY | O_CLOEXEC);\n"
-        "\tif (fd >= 0) {\n"
-        "\t\twrite(fd, value, p - value);\n"
-        "\t\tclose(fd);\n"
-        "\t}\n"
-        "\tfd = open(sm_stage, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644);\n"
+        "\tint fd = open(sm_stage, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644);\n"
         "\tif (fd >= 0) {\n"
         "\t\twrite(fd, value, p - value);\n"
         "\t\twrite(fd, \"\\n\", 1);\n"
@@ -706,35 +720,6 @@ GUI_INIT_90 = (
     "#endif\n"
     "\tev_init();\n"
 )
-GUI_INIT_NEW = (
-    "\t{\n"
-    "\t\tint fd = open(\"/sys/devices/14800000.dsim/backlight/panel/brightness\", O_WRONLY | O_CLOEXEC);\n"
-    "\t\tif (fd >= 0) {\n"
-    "\t\t\twrite(fd, \"150\", 3);\n"
-    "\t\t\tclose(fd);\n"
-    "\t\t}\n"
-    "\t}\n"
-    "\tgr_init();\n"
-    "\tTWFunc::Set_Brightness(DataManager::GetStrValue(\"tw_brightness\"));\n"
-    "\tLOGINFO(\"SM-T583 skip splash\\n\");\n"
-    "\t{\n"
-    "\t\tint fd = open(\"/sys/devices/14800000.dsim/backlight/panel/brightness\", O_WRONLY | O_CLOEXEC);\n"
-    "\t\tif (fd >= 0) {\n"
-    "\t\t\twrite(fd, \"152\", 3);\n"
-    "\t\t\tclose(fd);\n"
-    "\t\t}\n"
-    "\t}\n"
-    "\tev_init();\n"
-    "\t{\n"
-    "\t\tint fd = open(\"/sys/devices/14800000.dsim/backlight/panel/brightness\", O_WRONLY | O_CLOEXEC);\n"
-    "\t\tif (fd >= 0) {\n"
-    "\t\t\twrite(fd, \"159\", 3);\n"
-    "\t\t\tclose(fd);\n"
-    "\t\t}\n"
-    "\t}\n"
-)
-
-
 def patch_gui_init(text):
     # Disabled: gui_init splash/brightness beacons are in the vendored gui.cpp
     return text
@@ -892,9 +877,10 @@ FAULT_HELPER = (
     "\t\tb[n++] = '0' + (v / 100) % 10;\n"
     "\tb[n++] = '0' + (v / 10) % 10;\n"
     "\tb[n++] = '0' + v % 10;\n"
-    "\tint fd = open(sm_bright, O_WRONLY | O_CLOEXEC);\n"
+    "\tint fd = open(\"/cache/recovery/sm-stage\", O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644);\n"
     "\tif (fd >= 0) {\n"
     "\t\twrite(fd, b, n);\n"
+    "\t\twrite(fd, \"\\n\", 1);\n"
     "\t\tclose(fd);\n"
     "\t}\n"
     "}\n"
@@ -958,9 +944,10 @@ def sm_mark_helper(tag):
         "\t\tb[n++] = '0' + (v / 100) % 10;\n"
         "\tb[n++] = '0' + (v / 10) % 10;\n"
         "\tb[n++] = '0' + v % 10;\n"
-        "\tint fd = open(\"/sys/devices/14800000.dsim/backlight/panel/brightness\", O_WRONLY | O_CLOEXEC);\n"
+        "\tint fd = open(\"/cache/recovery/sm-stage\", O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644);\n"
         "\tif (fd >= 0) {\n"
         "\t\twrite(fd, b, n);\n"
+        "\t\twrite(fd, \"\\n\", 1);\n"
         "\t\tclose(fd);\n"
         "\t}\n"
         "}\n\n"
