@@ -224,9 +224,22 @@ def self_test():
     rc_path = os.path.join(repo_root, "overrides", "init.recovery.samsungexynos7870.rc")
     usb_path = os.path.join(repo_root, "overrides", "init.recovery.usb.rc")
     wait_path = os.path.join(repo_root, "overrides", "usbwait.sh")
+    board_path = os.path.join(repo_root, "overrides", "BoardConfig.mk")
+    workflow_path = os.path.join(repo_root, ".github", "workflows", "Recovery Build_SW.yml")
     rc = open(rc_path, encoding="utf-8").read()
     usb = open(usb_path, encoding="utf-8").read()
     wait = open(wait_path, encoding="utf-8").read()
+    board = open(board_path, encoding="utf-8").read()
+    workflow = open(workflow_path, encoding="utf-8").read()
+    for setting in (
+        "TARGET_USE_CONFIGFS := false",
+        "androidboot.usbconfig=adb",
+        "TW_MAX_BRIGHTNESS := 150",
+    ):
+        if setting not in board:
+            raise SystemExit("BoardConfig.mk missing setting: " + setting)
+    if 'echo "TW_MAX_BRIGHTNESS := 150"' not in workflow:
+        raise SystemExit("workflow brightness override is not 150")
     if not wait.startswith("#!/sbin/sh\n") or 'sleep "${1:-2}"' not in wait:
         raise SystemExit("usbwait.sh is not the recovery-domain delay")
     if "setprop sys.usb.config=" in rc or "setprop sys.usb.config " in rc or "setprop sys.usb.ffs.ready" in rc:
@@ -240,13 +253,21 @@ def self_test():
     disable_at = boot.find("write /sys/class/android_usb/android0/enable 0")
     vendor_at = boot.find("write /sys/class/android_usb/android0/idVendor 04e8")
     product_at = boot.find("write /sys/class/android_usb/android0/idProduct 6860")
+    aliases_at = boot.find("write /sys/class/android_usb/android0/f_ffs/aliases adb")
+    manufacturer_at = boot.find("write /sys/class/android_usb/android0/iManufacturer Samsung")
+    product_name_at = boot.find("write /sys/class/android_usb/android0/iProduct SM-T583")
+    serial_at = boot.find("write /sys/class/android_usb/android0/iSerial ${ro.serialno}")
     func_at = boot.find("write /sys/class/android_usb/android0/functions adb")
     start_at = boot.find("start adbd")
     descriptor_wait_at = boot.find("/sbin/usbwait.sh 2")
     enable_at = boot.find("write /sys/class/android_usb/android0/enable 1")
     if "exec /sbin/toybox sleep" in rc:
         raise SystemExit("unlabeled toybox exec is denied")
-    sequence = (wait_at, delay_at, disable_at, vendor_at, product_at, func_at, start_at, descriptor_wait_at, enable_at)
+    sequence = (
+        wait_at, delay_at, disable_at, vendor_at, product_at, aliases_at,
+        manufacturer_at, product_name_at, serial_at, func_at, start_at,
+        descriptor_wait_at, enable_at,
+    )
     if min(sequence) < 0 or sequence != tuple(sorted(sequence)):
         raise SystemExit("delayed legacy gadget bring-up order is incorrect")
     if "setprop sys.usb.configfs 0" not in rc:
