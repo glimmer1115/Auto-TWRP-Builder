@@ -1,12 +1,12 @@
-name: Recovery Build (Legacy)
+name: "DEPRECATED - Recovery Build (TeamWin reference only; gtaxlwifi)"
 
 on:
   workflow_dispatch:
     inputs:
       IMG_URL:
-        description: 'IMG_URL (optional). Leave EMPTY to use recovery.img committed in the repo root'
+        description: 'Disabled: TeamWin gtaxwifi-family images are reference only; use the SM-T583 workflow.'
         required: false
-        default: 'https://github.com/glimmer1115/Auto-TWRP-Builder/raw/refs/heads/master/recovery.img'
+        default: ''
       MANIFEST_URL:
         description: 'MANIFEST_URL (if want to use SSH keys, use git@github.com:XXXXX)'
         required: true
@@ -22,7 +22,7 @@ on:
 
 jobs:
   build:
-    if: github.event.repository.owner.id == github.event.sender.id
+    if: false
     runs-on: ubuntu-22.04
     permissions:
       contents: write

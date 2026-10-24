@@ -204,6 +204,10 @@ jobs:
           fi
           TREE=$(realpath --relative-to="$(pwd)" "$TREE")
           echo "생성된 트리 경로: $TREE"
+          if [[ "$TREE" != "device/samsung/gtaxladwifikx" ]]; then
+            echo "::error::SM-T583 전용 트리가 아닙니다: $TREE (expected device/samsung/gtaxladwifikx). 다른 모델의 TeamWin 이미지는 참고 자료로만 사용하세요."
+            exit 1
+          fi
           CODENAME=$(basename "$TREE")
 
           cd "$TREE"

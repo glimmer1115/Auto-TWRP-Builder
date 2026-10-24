@@ -289,9 +289,9 @@ def self_test():
     if "exec /sbin/toybox sleep" in rc:
         raise SystemExit("unlabeled toybox exec is denied")
     sequence = (
-        wait_at, delay_at, disable_at, vendor_at, product_at, aliases_at,
+        delay_at, disable_at, vendor_at, product_at, aliases_at,
         manufacturer_at, product_name_at, serial_at, func_at, start_at,
-        descriptor_wait_at, enable_at,
+        descriptor_wait_at, enable_at, wait_at,
     )
     if min(sequence) < 0 or sequence != tuple(sorted(sequence)):
         raise SystemExit("delayed legacy gadget bring-up order is incorrect")

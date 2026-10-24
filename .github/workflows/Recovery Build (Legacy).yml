@@ -1,12 +1,12 @@
-name: Recovery Build (Legacy)
+name: "DEPRECATED - Recovery Build (Legacy; not for SM-T583)"
 
 on:
   workflow_dispatch:
     inputs:
       IMG_URL:
-        description: 'IMG_ URL'
+        description: 'Disabled legacy workflow. Use Recovery Build (SM-T583 32-bit).'
         required: true
-        default: 'https://github.com/KoCleo/Auto-Twrp-Builder/raw/master/recovery.img'
+        default: ''
       MANIFEST_URL:
         description: 'MANIFEST_URL (if want to use SSH keys, use git@github.com:XXXXX)'
         required: true
@@ -22,7 +22,7 @@ on:
 
 jobs:
   build:
-    if: github.event.repository.owner.id == github.event.sender.id
+    if: false
     runs-on: ubuntu-20.04
     permissions:
       contents: write
