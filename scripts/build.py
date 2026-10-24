@@ -1,6 +1,7 @@
 from twrpdtgen.device_tree import DeviceTree
 import argparse
 import os
+import re
 from pathlib import Path
 
 def main():
@@ -15,15 +16,16 @@ def main():
 
     output_path.mkdir(parents=True, exist_ok=True)
     device_tree = DeviceTree(image_path)
-    device_tree.dump_to_folder(output_path)
-
-    manufacturer = str(device_tree.device_info.manufacturer)
-    codename = str(device_tree.device_info.codename)
+    manufacturer = str(device_tree.device_info.manufacturer or '')
+    codename = str(device_tree.device_info.codename or '')
+    safe_component = re.compile(r'[A-Za-z0-9_-]+')
     if any(
-        not value or value in ('.', '..') or Path(value).name != value or '\n' in value or '\r' in value
+        not safe_component.fullmatch(value)
         for value in (manufacturer, codename)
     ):
-        parser.error('device metadata contains an invalid path component')
+        parser.error('device metadata contains an unsafe manufacturer or codename')
+
+    device_tree.dump_to_folder(output_path)
 
     tree_path = output_path / manufacturer / codename
     android_bp_path = tree_path / 'Android.bp'
