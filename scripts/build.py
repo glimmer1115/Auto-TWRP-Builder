@@ -3,23 +3,42 @@ import argparse
 import os
 from pathlib import Path
 
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser(description="Auto-Twrp-Builder")
-    parser.add_argument('-i', '--input', type=str, default='', help='Recovery/Boot Image')
-    parser.add_argument('-o', '--output', type=str, default='', help='Output path')
+    parser.add_argument('-i', '--input', required=True, help='Recovery/Boot Image')
+    parser.add_argument('-o', '--output', required=True, help='Output path')
     args = parser.parse_args()
-    if not args.input or not args.output:
-        parser.print_help()
-        exit()
-    if not os.path.exists(args.output):
-        os.makedirs(args.output, exist_ok=True)
-    device_tree = DeviceTree(Path(args.input))
-    if os.getenv('GITHUB_OUTPUT', ''):
-        with open(os.getenv('GITHUB_OUTPUT', ''), 'w') as f:
-            f.write(f'DEVICE_NAME={device_tree.device_info.manufacturer}\n')
-            f.write(f'MAKEFILE_NAME=omni_{device_tree.device_info.codename}\n')
-            f.write(
-                f'DEVICE_PATH={os.path.basename(args.output) + os.sep + device_tree.device_info.manufacturer + os.sep + device_tree.device_info.codename}')
-    device_tree.dump_to_folder(Path(args.output))
-    with open(os.path.basename(args.output) + os.sep + device_tree.device_info.manufacturer + os.sep + device_tree.device_info.codename+os.sep+'Android.bp', 'r') as f:
-        print(f.read())
+    image_path = Path(args.input).expanduser()
+    output_path = Path(args.output).expanduser()
+    if not image_path.is_file():
+        parser.error('input image does not exist or is not a file: {}'.format(image_path))
+
+    output_path.mkdir(parents=True, exist_ok=True)
+    device_tree = DeviceTree(image_path)
+    device_tree.dump_to_folder(output_path)
+
+    manufacturer = str(device_tree.device_info.manufacturer)
+    codename = str(device_tree.device_info.codename)
+    if any(
+        not value or value in ('.', '..') or Path(value).name != value or '\n' in value or '\r' in value
+        for value in (manufacturer, codename)
+    ):
+        parser.error('device metadata contains an invalid path component')
+
+    tree_path = output_path / manufacturer / codename
+    android_bp_path = tree_path / 'Android.bp'
+    if not android_bp_path.is_file():
+        parser.error('generated Android.bp was not found: {}'.format(android_bp_path))
+
+    github_output = os.environ.get('GITHUB_OUTPUT')
+    if github_output:
+        with open(github_output, 'a', encoding='utf-8') as output_file:
+            output_file.write('DEVICE_NAME={}\n'.format(manufacturer))
+            output_file.write('MAKEFILE_NAME=omni_{}\n'.format(codename))
+            output_file.write('DEVICE_PATH={}\n'.format(tree_path.as_posix()))
+
+    print(android_bp_path.read_text(encoding='utf-8'))
+
+
+if __name__ == '__main__':
+    main()
