@@ -56,6 +56,9 @@ BOARD_MKBOOTIMG_ARGS := --kernel_offset $(BOARD_KERNEL_OFFSET) --ramdisk_offset 
 
 BOARD_FLASH_BLOCK_SIZE := 131072
 BOARD_BOOTIMAGE_PARTITION_SIZE := 33554432
+# SM-T583 RECOVERY readback: iteration 99 and live/stock checks on 2026-10-24.
+# Stock T583KOU1BTG1 also reports p11 = 77,824 sectors (39,845,888 bytes).
+# Keep aligned with the verified device size and the Odin packaging limit.
 BOARD_RECOVERYIMAGE_PARTITION_SIZE := 39845888
 BOARD_HAS_LARGE_FILESYSTEM := true
 TARGET_USERIMAGES_USE_EXT4 := true
