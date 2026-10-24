@@ -14,7 +14,6 @@ def main():
     if not image_path.is_file():
         parser.error('input image does not exist or is not a file: {}'.format(image_path))
 
-    output_path.mkdir(parents=True, exist_ok=True)
     device_tree = DeviceTree(image_path)
     manufacturer = str(device_tree.device_info.manufacturer or '')
     codename = str(device_tree.device_info.codename or '')
@@ -25,6 +24,7 @@ def main():
     ):
         parser.error('device metadata contains an unsafe manufacturer or codename')
 
+    output_path.mkdir(parents=True, exist_ok=True)
     device_tree.dump_to_folder(output_path)
 
     tree_path = output_path / manufacturer / codename
