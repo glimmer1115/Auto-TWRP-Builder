@@ -41,6 +41,7 @@ on fs
     write /sys/devices/virtual/sec/sec_wdt/wdt_control 0
     write /proc/sys/kernel/panic_on_oops 0
     mount functionfs adb /dev/usb-ffs/adb uid=2000,gid=2000,rmode=0777,fmode=0666
+    exec u:r:recovery:s0 root root -- /sbin/usbwait.sh mark ffs-mount-command-issued
     chmod 0777 /dev/usb-ffs/adb
     chmod 0666 /dev/usb-ffs/adb/ep0
     write /sys/class/android_usb/android0/enable 0
@@ -58,8 +59,11 @@ on boot
     write /sys/class/android_usb/android0/iSerial ${ro.serialno}
     write /sys/class/android_usb/android0/functions adb
     start adbd
+    exec u:r:recovery:s0 root root -- /sbin/usbwait.sh mark adbd-start-command-issued
     exec u:r:recovery:s0 root root -- /sbin/usbwait.sh 4
+    exec u:r:recovery:s0 root root -- /sbin/usbwait.sh mark descriptor-grace-window-ended
     write /sys/class/android_usb/android0/enable 1
+    exec u:r:recovery:s0 root root -- /sbin/usbwait.sh mark gadget-enable-command-issued
     wait /sys/devices/14800000.dsim/backlight/panel/brightness 10
 
 service watchdogd /sbin/watchdogd.sh

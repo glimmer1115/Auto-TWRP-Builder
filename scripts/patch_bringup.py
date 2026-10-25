@@ -222,7 +222,7 @@ def self_test():
             raise SystemExit("debug markers must not write the backlight node")
         if "/cache/recovery/sm-stage" not in helper:
             raise SystemExit("debug marker stage-file logging is missing")
-    print("debug markers: write only to sm-stage, never the backlight")
+    print("GUI markers: write only to sm-stage, never the backlight")
     if not patch_gui_step(vendored_gui, vgui):
         raise SystemExit("patch_gui_step must always succeed")
     print("gui.cpp: patch_bringup does not touch sources; vendored override ok")
@@ -265,8 +265,21 @@ def self_test():
         or 'case "$requested" in' not in wait
         or "*) timeout=5 ;;" not in wait
         or 'sleep "$timeout"' not in wait
+        or "mark_stage() {" not in wait
+        or '>> /cache/recovery/sm-stage 2>/dev/null || true' not in wait
+        or '> /dev/kmsg 2>/dev/null || true' not in wait
+        or 'mark_stage "delay-${timeout}s-start"' not in wait
+        or 'mark_stage "delay-${timeout}s-end"' not in wait
     ):
-        raise SystemExit("usbwait.sh does not enforce its five-second maximum")
+        raise SystemExit("usbwait.sh must keep its timeout cap and best-effort stage logging")
+    for marker in (
+        "ffs-mount-command-issued",
+        "adbd-start-command-issued",
+        "descriptor-grace-window-ended",
+        "gadget-enable-command-issued",
+    ):
+        if marker not in wait:
+            raise SystemExit("usbwait.sh does not allow diagnostic marker: " + marker)
     if "setprop sys.usb.config=" in rc or "setprop sys.usb.config " in rc or "setprop sys.usb.ffs.ready" in rc:
         raise SystemExit("usb config is forced before adbd writes descriptors")
     if "wait /dev/usb-ffs/adb/ep1" in rc or "on property:sys.usb.ffs.ready=1" in rc:
@@ -284,17 +297,24 @@ def self_test():
     serial_at = boot.find("write /sys/class/android_usb/android0/iSerial ${ro.serialno}")
     func_at = boot.find("write /sys/class/android_usb/android0/functions adb")
     start_at = boot.find("start adbd")
+    adbd_mark_at = boot.find("usbwait.sh mark adbd-start-command-issued")
     descriptor_wait_at = boot.find("/sbin/usbwait.sh 4")
+    descriptor_mark_at = boot.find("usbwait.sh mark descriptor-grace-window-ended")
     enable_at = boot.find("write /sys/class/android_usb/android0/enable 1")
+    gadget_mark_at = boot.find("usbwait.sh mark gadget-enable-command-issued")
     if "exec /sbin/toybox sleep" in rc:
         raise SystemExit("unlabeled toybox exec is denied")
     sequence = (
         delay_at, disable_at, vendor_at, product_at, aliases_at,
         manufacturer_at, product_name_at, serial_at, func_at, start_at,
-        descriptor_wait_at, enable_at, wait_at,
+        adbd_mark_at, descriptor_wait_at, descriptor_mark_at, enable_at,
+        gadget_mark_at, wait_at,
     )
     if min(sequence) < 0 or sequence != tuple(sorted(sequence)):
         raise SystemExit("delayed legacy gadget bring-up order is incorrect")
+    ffs_mark_at = rc.find("usbwait.sh mark ffs-mount-command-issued")
+    if ffs_mark_at < 0 or ffs_mark_at < rc.find("mount functionfs adb"):
+        raise SystemExit("FunctionFS mount diagnostic marker is missing or out of order")
     if "setprop sys.usb.configfs 0" not in rc:
         raise SystemExit("configfs is not disabled for the legacy gadget")
     simulate_misc_bcb()
