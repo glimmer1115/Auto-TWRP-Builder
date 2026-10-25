@@ -79,8 +79,10 @@ def patch_debuggable_usb_enable(text):
             lines[index].rstrip("\r\n"),
         )
     ]
-    if len(enable_lines) != 1:
-        raise SystemExit("ro.debuggable trigger 에서 조기 USB enable 을 하나 찾지 못했습니다.")
+    if len(enable_lines) > 1:
+        raise SystemExit("ro.debuggable trigger 에서 조기 USB enable 이 여러 개 발견됐습니다.")
+    if not enable_lines:
+        return text
 
     lines[enable_lines[0]] = ""
     return "".join(lines)
@@ -285,8 +287,15 @@ def self_test():
         raise SystemExit("ro.debuggable trigger still enables the gadget early")
     if patched.count("write /sys/class/android_usb/android0/enable 1") != 1:
         raise SystemExit("device-specific gadget enable was not preserved")
+    no_early_enable = (
+        "on property:ro.debuggable=1\n"
+        "    setprop service.adb.root 1\n"
+    )
+    if patch_debuggable_usb_enable(no_early_enable) != no_early_enable:
+        raise SystemExit("init.rc without a generic USB enable was modified")
     print("init.rc: restart adbd removed")
     print("init.rc: early ro.debuggable gadget enable removed; device enable preserved")
+    print("init.rc: ro.debuggable trigger without USB enable accepted")
     rc_path = os.path.join(repo_root, "overrides", "init.recovery.samsungexynos7870.rc")
     usb_path = os.path.join(repo_root, "overrides", "init.recovery.usb.rc")
     wait_path = os.path.join(repo_root, "overrides", "usbwait.sh")
