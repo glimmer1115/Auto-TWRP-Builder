@@ -242,11 +242,23 @@ jobs:
 
           # Recovery ADB must be root-capable and unauthenticated on this Oreo 8.1 build.
           PRODUCT_DEFAULT_PROPERTY_OVERRIDES += \
+              ro.adb.secure=0 \
               ro.debuggable=1 \
               ro.secure=0 \
-              ro.adb.secure=0 \
               persist.sys.usb.config=adb
           EOF
+
+          for prop_file in recovery/root/default.prop recovery/root/prop.default; do
+            if [ -f "$prop_file" ]; then
+              sed -i -E '/^(ro\.debuggable|ro\.secure|ro\.adb\.secure|persist\.sys\.usb\.config)=/d' "$prop_file"
+              printf '%s\n' \
+                'ro.debuggable=1' \
+                'ro.secure=0' \
+                'ro.adb.secure=0' \
+                'persist.sys.usb.config=adb' >> "$prop_file"
+              echo "Recovery 속성을 적용했습니다: $prop_file"
+            fi
+          done
 
           rm -f Android.bp
 
@@ -415,14 +427,19 @@ jobs:
             echo "::error::recovery 램디스크 default.prop 가 없습니다."
             exit 1
           fi
-          for prop in ro.debuggable=1 ro.secure=0 ro.adb.secure=0 persist.sys.usb.config=adb; do
-            key=${prop%%=*}
-            actual=$(grep -E "^${key}=" "$ROOT/default.prop" | tail -n 1 || true)
-            if [ "$actual" != "$prop" ]; then
-              echo "::error::recovery default.prop 에 $prop 속성이 없습니다."
-              grep -E '^(ro.debuggable|ro.secure|ro.adb.secure|persist.sys.usb.config)=' "$ROOT/default.prop" || true
-              exit 1
+          for prop_file in "$ROOT/default.prop" "$ROOT/prop.default"; do
+            if [ ! -f "$prop_file" ]; then
+              continue
             fi
+            for prop in ro.debuggable=1 ro.secure=0 ro.adb.secure=0 persist.sys.usb.config=adb; do
+              key=${prop%%=*}
+              actual=$(grep -E "^${key}=" "$prop_file" | tail -n 1 || true)
+              if [ "$actual" != "$prop" ]; then
+                echo "::error::recovery 속성 파일 $prop_file 에 $prop 값이 없습니다."
+                grep -E '^(ro.debuggable|ro.secure|ro.adb.secure|persist.sys.usb.config)=' "$prop_file" || true
+                exit 1
+              fi
+            done
           done
           if [ ! -e "$ROOT/sbin/linker" ]; then
             src=$(find "out/target/product/${CODENAME}/system" "out/target/product/${CODENAME}/obj" \
@@ -657,6 +674,49 @@ jobs:
               return dict(ka=ka, ra=ra, sa=sa, pg=pg,
                           k=d[o1:o1 + ks], r=d[o2:o2 + rs], dt=d[o4:o4 + dts])
 
+          def verify_recovery_properties(raw):
+              offset = 0
+              prop_files = {}
+              while offset + 110 <= len(raw):
+                  header = raw[offset:offset + 110]
+                  if header[:6] not in (b'070701', b'070702'):
+                      sys.exit('최종 램디스크가 newc CPIO 형식이 아닙니다.')
+                  file_size = int(header[54:62], 16)
+                  name_size = int(header[94:102], 16)
+                  name_start = offset + 110
+                  name_end = name_start + name_size
+                  if name_size < 1 or name_end > len(raw):
+                      sys.exit('최종 램디스크 CPIO 경로가 잘렸습니다.')
+                  name = raw[name_start:name_end - 1].decode('utf-8', 'replace').lstrip('./')
+                  data_start = (name_end + 3) & ~3
+                  data_end = data_start + file_size
+                  if data_end > len(raw):
+                      sys.exit('최종 램디스크 CPIO 파일이 잘렸습니다: ' + name)
+                  if name == 'TRAILER!!!':
+                      break
+                  if name in ('default.prop', 'prop.default'):
+                      prop_files[name] = raw[data_start:data_end].decode('utf-8', 'replace')
+                  offset = (data_end + 3) & ~3
+
+              if 'default.prop' not in prop_files:
+                  sys.exit('최종 recovery.img 램디스크에 default.prop 가 없습니다.')
+              expected = {
+                  'ro.debuggable': '1',
+                  'ro.secure': '0',
+                  'ro.adb.secure': '0',
+                  'persist.sys.usb.config': 'adb',
+              }
+              for path, contents in prop_files.items():
+                  values = {}
+                  for line in contents.splitlines():
+                      if '=' in line and not line.lstrip().startswith('#'):
+                          key, value = line.split('=', 1)
+                          values[key] = value
+                  for key, value in expected.items():
+                      if values.get(key) != value:
+                          sys.exit('최종 recovery.img 의 %s 에 %s=%s 가 없습니다.' % (path, key, value))
+              print('최종 recovery.img 속성 확인: ro.debuggable=1, ro.secure=0, ro.adb.secure=0, persist.sys.usb.config=adb')
+
           stock = open(sys.argv[1], 'rb').read()
           built = open(sys.argv[2], 'rb').read()
           st = parse(stock); b = parse(built)
@@ -705,6 +765,7 @@ jobs:
           pad = lambda x: x + b'\0' * (up(len(x)) - len(x))
           out = bytes(hdr) + pad(kernel) + pad(ramdisk) + pad(dt)
           assert len(out) + len(TRAILER) <= PART_SIZE, '이미지가 너무 큽니다: %d' % (len(out) + len(TRAILER))
+          verify_recovery_properties(gzip.decompress(parse(out)['r']))
           open(sys.argv[3], 'wb').write(out)
           print('최종 크기 (트레일러 전)', len(out), '/', PART_SIZE)
           PY
