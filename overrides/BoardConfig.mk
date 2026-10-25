@@ -1,4 +1,4 @@
-# overrides/BoardConfig.mk  (SM-T583 / gtaxladwifikx / exynos7870)
+# overrides/BoardConfig.mk (SM-T583 / gtaxladwifikx / exynos7870)
 # Appended to the END of the generated BoardConfig.mk by the workflow.
 # Last assignment wins. DEVICE_PATH is defined by the workflow just above this block.
 #
@@ -13,6 +13,7 @@ TARGET_BOOTLOADER_BOARD_NAME := universal7870
 TARGET_NO_BOOTLOADER := true
 TARGET_NO_RADIOIMAGE := true
 
+# Platform Architecture (32-bit Hybrid Mode for Recovery)
 TARGET_ARCH := arm
 TARGET_ARCH_VARIANT := armv7-a-neon
 TARGET_CPU_ABI := armeabi-v7a
@@ -29,51 +30,46 @@ TARGET_KERNEL_ARCH := arm64
 TARGET_KERNEL_HEADER_ARCH := arm64
 TARGET_USES_UNCOMPRESSED_KERNEL := true
 
+# Vendor & Kernel Cmdline
 BOARD_VENDOR := samsung
-BOARD_KERNEL_CMDLINE := androidboot.selinux=permissive androidboot.usbconfig=adb
+BOARD_KERNEL_CMDLINE += androidboot.usbconfig=adb
 TARGET_USE_CONFIGFS := false
+
+# Verified Kernel Table Offsets (from cikargs)
 BOARD_KERNEL_BASE := 0x10000000
 BOARD_KERNEL_PAGESIZE := 2048
 BOARD_KERNEL_OFFSET := 0x00008000
 BOARD_RAMDISK_OFFSET := 0x01000000
 BOARD_TAGS_OFFSET := 0x00000100
-# The makefile looks up Image. The workflow stores the stock kernel bytes
-# there. The Odin step copies those same bytes back in.
+
+# Kernel Image Configuration
 BOARD_KERNEL_IMAGE_NAME := Image
 TARGET_PREBUILT_KERNEL := $(DEVICE_PATH)/prebuilt/Image
-# Stock recovery ramdisk is gzip. twrp-11 emits LZ4, and this Oreo
-# bootloader stops with "invalid ramdisk" on anything else.
+
+# Ramdisk compression (Oreo bootloader requirements)
 BOARD_RAMDISK_USE_LZ4 := false
 
-# twrpdtgen may emit DTB / DTBO / header-v1+ settings that point to files we
-# do not ship. Stock DTBH is re-attached in the Odin packaging step.
+# Prebuilt DTB Handling (Odin step packaging handles Appended DTB)
 BOARD_INCLUDE_DTB_IN_BOOTIMG :=
 BOARD_PREBUILT_DTBIMAGE_DIR :=
 BOARD_PREBUILT_DTBOIMAGE :=
 BOARD_INCLUDE_RECOVERY_DTBO :=
 BOARD_BOOT_HEADER_VERSION := 0
-BOARD_MKBOOTIMG_ARGS := --kernel_offset $(BOARD_KERNEL_OFFSET) --ramdisk_offset $(BOARD_RAMDISK_OFFSET) --tags_offset $(BOARD_TAGS_OFFSET) --board SRPRA23C001RU
 
+# Fixed Packaging Arguments (Added second_offset to prevent packing headers overlap)
+BOARD_MKBOOTIMG_ARGS := --kernel_offset $(BOARD_KERNEL_OFFSET) --ramdisk_offset $(BOARD_RAMDISK_OFFSET) --tags_offset $(BOARD_TAGS_OFFSET) --second_offset 0x10f00000 --board SRPRA23C001RU
+
+# Partition Sizes Configuration
 BOARD_FLASH_BLOCK_SIZE := 131072
 BOARD_BOOTIMAGE_PARTITION_SIZE := 33554432
-# SM-T583 RECOVERY readback: iteration 99 and live/stock checks on 2026-10-24.
-# Stock T583KOU1BTG1 also reports p11 = 77,824 sectors (39,845,888 bytes).
-# Keep aligned with the verified device size and the Odin packaging limit.
 BOARD_RECOVERYIMAGE_PARTITION_SIZE := 39845888
 BOARD_HAS_LARGE_FILESYSTEM := true
 TARGET_USERIMAGES_USE_EXT4 := true
 BOARD_SUPPRESS_SECURE_ERASE := true
 
+# Display & Graphics Layout (Fixed Double-Buffer Signal 11 Crash)
 TARGET_SCREEN_WIDTH := 1200
 TARGET_SCREEN_HEIGHT := 1920
-# FBIOGET on this panel: 32bpp, 1200x1920, red.offset 16, green.offset 8,
-# blue.offset 0, line_length 4800, smem_len 18432000, yres_virtual 1920.
-# smem_len is exactly two screens, so minui turns on double buffering and
-# FBIOPUT_VSCREENINFO asks for yres_virtual 3840 unless single-buffer is
-# compiled in. The workflow passes only TW_NO_SCREEN_BLANK into minui.
-# Do not also pass the brightness macros there: with all three set,
-# fbdev_blank writes 000. The 0 that remained in the 879923a log is
-# blanktimer's Set_Brightness("0"), which TW_NO_SCREEN_TIMEOUT removes.
 TARGET_RECOVERY_PIXEL_FORMAT := "ABGR_8888"
 RECOVERY_GRAPHICS_USE_LINELENGTH := true
 RECOVERY_GRAPHICS_FORCE_USE_LINELENGTH := true
@@ -81,15 +77,11 @@ RECOVERY_GRAPHICS_FORCE_SINGLE_BUFFER := true
 BOARD_SEPOLICY_DIRS += $(DEVICE_PATH)/sepolicy
 RECOVERY_SDCARD_ON_DATA := true
 
+# User Interface & Backlight Configuration
 TW_THEME := portrait_hdpi
-# SM-T580 official TWRP uses the dsim device node, not /sys/class/backlight/panel.
 TW_BRIGHTNESS_PATH := "/sys/devices/14800000.dsim/backlight/panel/brightness"
 TW_MAX_BRIGHTNESS := 150
 TW_DEFAULT_BRIGHTNESS := 120
-# libguitwrp skips gr_fb_blank when this is set. It does not stop
-# blanktimer from calling Set_Brightness("0"). The 879923a log is still
-# 162, then 0, then 162, then signal 11. TW_NO_SCREEN_TIMEOUT compiles
-# that whole function out of libguitwrp.
 TW_NO_SCREEN_BLANK := true
 TW_NO_SCREEN_TIMEOUT := true
 TW_NO_REBOOT_BOOTLOADER := true
@@ -97,13 +89,10 @@ TW_HAS_DOWNLOAD_MODE := true
 TW_EXCLUDE_DEFAULT_USB_INIT := true
 TARGET_RECOVERY_INITRC :=
 TW_EXCLUDE_VENDOR_BOOT_SERVICE := true
-# twrpdtgen turns on cryptfs when the stock fstab says encryptable.
-# After the fstab mounts, cryptfs_get_password_type faults this Oreo
-# userdata before gui_loadResources can draw. The UI has to come up first.
+
+# Disabled Encryption to prevent Crypto-Vold GUI Hangs before loadResources
 TW_INCLUDE_CRYPTO := false
 TW_INCLUDE_JB_CRYPTO := false
 TW_INCLUDE_L_CRYPTO := false
 TW_INCLUDE_CRYPTO_FBE := false
 TW_CRYPTO_USE_SYSTEM_VOLD := false
-# Do not set TARGET_GLOBAL_* or HOST_GLOBAL_* here. Omni 8.1 ckati compares
-# those lists with Soong and stops with "Soong variable check failed."

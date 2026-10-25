@@ -12,10 +12,9 @@
 # The delay helper must run as u:r:recovery:s0.
 # An unlabeled exec of toybox has no SELinux domain, execve is denied,
 # and init enables an empty gadget. adbd never sets sys.usb.ffs.ready.
-# A write to /sys/fs/selinux/enforce returns 0 and the kernel stays enforcing.
+# Leave SELinux mode to the bootloader and loaded policy; this RC does not change it.
 
 on early-init
-    write /sys/fs/selinux/enforce 0
     write /sys/devices/virtual/sec/sec_wdt/wdt_control 0
     write /sys/class/sec/sec_wdt/wdt_control 0
     write /sys/devices/platform/s3c2410-wdt/wdt_disable 1
@@ -27,7 +26,6 @@ on early-init
     setprop persist.adb.nonblocking_ffs 0
 
 on init
-    write /sys/fs/selinux/enforce 0
     write /sys/devices/virtual/sec/sec_wdt/wdt_control 0
     write /sys/class/sec/sec_wdt/wdt_control 0
     write /proc/sys/kernel/panic 0
@@ -37,7 +35,6 @@ on init
     start watchdogd
 
 on fs
-    write /sys/fs/selinux/enforce 0
     write /sys/devices/virtual/sec/sec_wdt/wdt_control 0
     write /proc/sys/kernel/panic_on_oops 0
     mount functionfs adb /dev/usb-ffs/adb uid=2000,gid=2000,rmode=0777,fmode=0666
@@ -48,7 +45,6 @@ on fs
     start watchdogd
 
 on boot
-    write /sys/fs/selinux/enforce 0
     exec u:r:recovery:s0 root root -- /sbin/usbwait.sh 3
     write /sys/class/android_usb/android0/enable 0
     write /sys/class/android_usb/android0/idVendor 04e8

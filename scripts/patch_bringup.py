@@ -251,6 +251,19 @@ def self_test():
     wait = open(wait_path, encoding="utf-8").read()
     board = open(board_path, encoding="utf-8").read()
     workflow = open(workflow_path, encoding="utf-8").read()
+    policy_path = os.path.join(repo_root, "overrides", "sepolicy", "permissive.te")
+    if "androidboot.selinux=permissive" in board:
+        raise SystemExit("BoardConfig.mk must not request permissive SELinux")
+    if "/sys/fs/selinux/enforce" in rc:
+        raise SystemExit("device init rc must not change SELinux mode")
+    if any(marker in workflow for marker in ("permissive.te", "mark_permissive.py", "mark_cpio(")):
+        raise SystemExit("workflow must not inject permissive SELinux policy")
+    if os.path.exists(policy_path):
+        raise SystemExit("permissive SELinux policy override must not be present")
+    if "BOARD_KERNEL_CMDLINE += androidboot.usbconfig=adb" not in board:
+        raise SystemExit("BoardConfig.mk must append, not replace, the existing kernel cmdline")
+    if "BOARD_KERNEL_CMDLINE :=" in board:
+        raise SystemExit("BoardConfig.mk must not replace the existing kernel cmdline")
     for setting in (
         "TARGET_USE_CONFIGFS := false",
         "androidboot.usbconfig=adb",
