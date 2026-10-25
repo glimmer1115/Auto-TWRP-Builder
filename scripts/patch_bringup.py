@@ -53,7 +53,41 @@ def patch_gui_step(_path=None, _text=None):
     return True
 
 
+def patch_debuggable_usb_enable(text):
+    lines = text.splitlines(keepends=True)
+    triggers = [
+        index
+        for index, line in enumerate(lines)
+        if re.match(r"^on\s+property:ro\.debuggable=1(?:\s|$)", line)
+    ]
+    if len(triggers) != 1:
+        raise SystemExit("init.rc 에서 ro.debuggable USB trigger 를 하나 찾지 못했습니다.")
+
+    start = triggers[0]
+    end = len(lines)
+    for index in range(start + 1, len(lines)):
+        line = lines[index]
+        if line.strip() and not line[0].isspace() and not line.lstrip().startswith("#"):
+            end = index
+            break
+
+    enable_lines = [
+        index
+        for index in range(start + 1, end)
+        if re.fullmatch(
+            r"[ \t]*write[ \t]+/sys/class/android_usb/android0/enable[ \t]+1[ \t]*(?:#.*)?",
+            lines[index].rstrip("\r\n"),
+        )
+    ]
+    if len(enable_lines) != 1:
+        raise SystemExit("ro.debuggable trigger 에서 조기 USB enable 을 하나 찾지 못했습니다.")
+
+    lines[enable_lines[0]] = ""
+    return "".join(lines)
+
+
 def patch_init_rc(text):
+    text = patch_debuggable_usb_enable(text)
     updated, count = ADB_OLD.subn(ADB_NEW, text, count=1)
     if count != 1:
         raise SystemExit("init.rc 에서 adbd 재시작 블록을 찾지 못했습니다.")
@@ -228,11 +262,17 @@ def self_test():
     print("gui.cpp: patch_bringup does not touch sources; vendored override ok")
     init_rc = (
         "on property:ro.debuggable=1\n"
+        "    write /sys/class/android_usb/android0/enable 1\n"
+        "    start adbd\n"
+        "\n"
         "    setprop service.adb.root 1\n"
         "\n"
         "on property:service.adb.root=1\n"
         "    write /sys/class/android_usb/android0/enable 0\n"
         "    restart adbd\n"
+        "    write /sys/class/android_usb/android0/enable 1\n"
+        "\n"
+        "on boot\n"
         "    write /sys/class/android_usb/android0/enable 1\n"
     )
     patched = patch_init_rc(init_rc)
@@ -240,7 +280,13 @@ def self_test():
         raise SystemExit("adbd restart remains")
     if "start adbd" not in patched:
         raise SystemExit("adbd start missing")
+    debuggable_block = patched.split("on property:ro.debuggable=1", 1)[1].split("\non ", 1)[0]
+    if "write /sys/class/android_usb/android0/enable 1" in debuggable_block:
+        raise SystemExit("ro.debuggable trigger still enables the gadget early")
+    if patched.count("write /sys/class/android_usb/android0/enable 1") != 1:
+        raise SystemExit("device-specific gadget enable was not preserved")
     print("init.rc: restart adbd removed")
+    print("init.rc: early ro.debuggable gadget enable removed; device enable preserved")
     rc_path = os.path.join(repo_root, "overrides", "init.recovery.samsungexynos7870.rc")
     usb_path = os.path.join(repo_root, "overrides", "init.recovery.usb.rc")
     wait_path = os.path.join(repo_root, "overrides", "usbwait.sh")
