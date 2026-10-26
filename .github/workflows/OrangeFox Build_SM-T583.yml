@@ -166,8 +166,10 @@ jobs:
           python3 "${GITHUB_WORKSPACE}/scripts/build.py" -i recovery.img -o device \
             --default-prop ro.product.first_api_level=26 \
             --default-prop ro.build.version.security_patch=2020-06-01
-          if [ "${DEVICE_PATH:-}" != "device/samsung/gtaxladwifikx" ]; then
-            echo "::error::입력 이미지에서 SM-T583 트리를 생성하지 못했습니다: ${DEVICE_PATH:-unset}"
+          # 스텝 출력은 이 스텝이 끝난 뒤에야 읽히므로 생성된 디렉터리를 직접 확인합니다.
+          if [ ! -f device/samsung/gtaxladwifikx/Android.bp ]; then
+            echo "::error::입력 이미지에서 SM-T583 트리를 생성하지 못했습니다."
+            ls -R device | head -50 || true
             exit 1
           fi
 
