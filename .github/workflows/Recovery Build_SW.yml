@@ -749,6 +749,12 @@ jobs:
           RAMDISK_ADDR = 0x11000000
           SECOND_ADDR = 0x10F00000
           TAGS_ADDR = 0x10000100
+          stock_end = PAGE
+          for off in (8, 16, 24, 40):
+              stock_end += (struct.unpack_from('<I', stock, off)[0] + PAGE - 1) // PAGE * PAGE
+          if stock[stock_end:stock_end + len(TRAILER)] != TRAILER:
+              sys.exit('입력 recovery.img 의 %d 위치에 SEANDROIDENFORCE 가 없습니다.' % stock_end)
+          print('입력 recovery.img 크기', len(stock), 'SEANDROIDENFORCE 위치', stock_end)
           if st['pg'] != PAGE or st['ka'] != KERNEL_ADDR or st['ra'] != RAMDISK_ADDR:
               sys.exit('순정 헤더 주소가 예상과 다릅니다 page=%s ka=%s ra=%s' % (st['pg'], hex(st['ka']), hex(st['ra'])))
           if len(dt) != 364544:
@@ -787,6 +793,14 @@ jobs:
           PY
           cd "$GITHUB_WORKSPACE/artifacts"
           printf 'SEANDROIDENFORCE' >> recovery.img
+          if [ "$(tail -c 16 recovery.img)" != "SEANDROIDENFORCE" ]; then
+            echo "::error::최종 recovery.img 끝에 SEANDROIDENFORCE 가 없습니다."
+            exit 1
+          fi
+          if [ "$(stat -c %s recovery.img)" -gt 39845888 ]; then
+            echo "::error::최종 recovery.img 가 파티션 크기 39845888 을 넘습니다."
+            exit 1
+          fi
           tar -H ustar -c recovery.img > TWRP-recovery.tar
           ls -l
           sha256sum recovery.img TWRP-recovery.tar
