@@ -2,13 +2,9 @@ name: OrangeFox Recovery Build (SM-T583)
 
 on:
   workflow_dispatch:
-    inputs:
-      RECOVERY_IMAGE_URL:
-        description: 'URL of the last verified TWRP recovery image (SHA-256 enforced)'
-        required: true
-        type: string
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -17,13 +13,20 @@ jobs:
     timeout-minutes: 360
     env:
       WS: /tmp/orangefox
-      RECOVERY_IMAGE_URL: ${{ inputs.RECOVERY_IMAGE_URL }}
 
     steps:
       - name: Checkout builder
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+
+      - name: Download last verified TWRP recovery
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: twrp-gtaxladwifikx
+          run-id: 40253587740
+          github-token: ${{ github.token }}
+          path: /tmp/twrp-input
 
       - name: Reclaim runner disk space
         run: |
@@ -101,18 +104,12 @@ jobs:
         working-directory: ${{ env.WS }}
         run: |
           set -euo pipefail
-          echo "::add-mask::$RECOVERY_IMAGE_URL"
-          if [[ "$RECOVERY_IMAGE_URL" != https://* ]]; then
-            echo "::error::TWRP 이미지 URL은 HTTPS여야 합니다."
+          SOURCE_IMAGE=/tmp/twrp-input/recovery.img
+          if [ ! -s "$SOURCE_IMAGE" ]; then
+            echo "::error::TWRP artifact에서 recovery.img를 찾지 못했습니다."
             exit 1
           fi
-          if ! curl --fail --silent --show-error --location --proto '=https' \
-            --proto-redir '=https' --max-redirs 5 --max-filesize 536870912 \
-            --retry 3 --connect-timeout 20 --max-time 600 \
-            "$RECOVERY_IMAGE_URL" -o recovery.img; then
-            echo "::error::마지막 검증 TWRP 이미지 다운로드에 실패했습니다."
-            exit 1
-          fi
+          cp "$SOURCE_IMAGE" recovery.img
           actual_sha256="$(sha256sum recovery.img | cut -d ' ' -f 1)"
           expected_sha256=bc2202cadc9d7fb556e28badd531b021555c1c1137ae6bc78b04c8bcf0037bc1
           if [ "$actual_sha256" != "$expected_sha256" ]; then
