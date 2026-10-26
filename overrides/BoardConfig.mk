@@ -80,8 +80,8 @@ RECOVERY_SDCARD_ON_DATA := true
 # User Interface & Backlight Configuration
 TW_THEME := portrait_hdpi
 TW_BRIGHTNESS_PATH := "/sys/devices/14800000.dsim/backlight/panel/brightness"
-TW_MAX_BRIGHTNESS := 150
-TW_DEFAULT_BRIGHTNESS := 120
+TW_MAX_BRIGHTNESS := 306
+TW_DEFAULT_BRIGHTNESS := 200
 TW_NO_SCREEN_BLANK := true
 TW_NO_SCREEN_TIMEOUT := true
 TW_NO_REBOOT_BOOTLOADER := true

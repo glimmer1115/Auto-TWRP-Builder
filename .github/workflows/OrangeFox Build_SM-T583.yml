@@ -1,0 +1,246 @@
+name: OrangeFox Recovery Build (SM-T583)
+
+on:
+  workflow_dispatch:
+    inputs:
+      RECOVERY_IMAGE_URL:
+        description: 'URL of the last verified TWRP recovery image (SHA-256 enforced)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    env:
+      WS: /tmp/orangefox
+      RECOVERY_IMAGE_URL: ${{ inputs.RECOVERY_IMAGE_URL }}
+
+    steps:
+      - name: Checkout builder
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Reclaim runner disk space
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift
+          df -h /
+          avail_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+          if [ "$avail_kb" -lt 41943040 ]; then
+            echo "::error::40 GiB 미만의 여유 공간으로 Android 16 빌드를 시작할 수 없습니다."
+            exit 1
+          fi
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison build-essential ccache curl flex g++-multilib gcc-multilib \
+            git gnupg gperf imagemagick lib32readline-dev lib32z1-dev libelf-dev \
+            liblz4-tool libncurses5-dev libncursesw5-dev libssl-dev libxml2 \
+            libxml2-utils lzop pngcrush python3 python3-pip rsync schedtool \
+            squashfs-tools unzip xsltproc zip zlib1g-dev
+          python3 -m pip install --user -U twrpdtgen
+
+      - name: Install Java and repo
+        uses: actions/setup-java@6a0805fcefea3d4657a47ac4c165951e33482018 # v4.2.2
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install repo tool
+        run: |
+          sudo curl -fsSL --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 120 \
+            https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
+          sudo chmod a+x /usr/local/bin/repo
+          repo --version
+
+      - name: Initialize OrangeFox manifest
+        timeout-minutes: 30
+        run: |
+          set -euo pipefail
+          mkdir -p "$WS"
+          cd "$WS"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global color.ui false
+          repo init --depth=1 \
+            -u https://gitlab.com/sm-t583/Manifest.git \
+            -b c5bc4610ea5ace4b2d1f74278b99574e93adf6f8
+          test "$(git -C .repo/manifests rev-parse HEAD)" = \
+            "c5bc4610ea5ace4b2d1f74278b99574e93adf6f8"
+
+          mkdir -p .repo/local_manifests
+          cat > .repo/local_manifests/gtaxladwifikx.xml <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <manifest>
+            <remove-project path="device/xiaomi/mondrian" />
+            <remove-project path="device/xiaomi/sm84xx-common" />
+          </manifest>
+          EOF
+          repo manifest -o /tmp/orangefox-manifest.xml
+          if grep -Eq 'device/xiaomi/(mondrian|sm84xx-common)' /tmp/orangefox-manifest.xml; then
+            echo "::error::Xiaomi 기기 트리가 resolved manifest에서 제거되지 않았습니다."
+            exit 1
+          fi
+
+      - name: Sync OrangeFox sources
+        timeout-minutes: 180
+        working-directory: ${{ env.WS }}
+        run: |
+          set -euo pipefail
+          repo sync --jobs=4 --force-sync --no-clone-bundle --no-tags -c --fail-fast
+
+      - name: Download and validate recovery image
+        working-directory: ${{ env.WS }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$RECOVERY_IMAGE_URL"
+          if [[ "$RECOVERY_IMAGE_URL" != https://* ]]; then
+            echo "::error::TWRP 이미지 URL은 HTTPS여야 합니다."
+            exit 1
+          fi
+          if ! curl --fail --silent --show-error --location --proto '=https' \
+            --proto-redir '=https' --max-redirs 5 --max-filesize 536870912 \
+            --retry 3 --connect-timeout 20 --max-time 600 \
+            "$RECOVERY_IMAGE_URL" -o recovery.img; then
+            echo "::error::마지막 검증 TWRP 이미지 다운로드에 실패했습니다."
+            exit 1
+          fi
+          actual_sha256="$(sha256sum recovery.img | cut -d ' ' -f 1)"
+          expected_sha256=bc2202cadc9d7fb556e28badd531b021555c1c1137ae6bc78b04c8bcf0037bc1
+          if [ "$actual_sha256" != "$expected_sha256" ]; then
+            echo "::error::이미지가 마지막 검증 TWRP 빌드와 일치하지 않습니다. stock 또는 다른 파일은 사용할 수 없습니다."
+            exit 1
+          fi
+          if [ "$(stat -c '%s' recovery.img)" != "31246352" ]; then
+            echo "::error::TWRP 이미지 크기가 마지막 검증 산출물과 다릅니다."
+            exit 1
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+
+          image = Path("recovery.img").read_bytes()
+          if image[:8] != b"ANDROID!":
+              raise SystemExit("입력 파일이 Android boot/recovery 이미지가 아닙니다.")
+          print("Recovery image bytes:", len(image))
+          PY
+          sha256sum recovery.img
+
+      - name: Generate SM-T583 device tree
+        id: gdt
+        working-directory: ${{ env.WS }}
+        run: |
+          set -euo pipefail
+          python3 "${GITHUB_WORKSPACE}/scripts/build.py" -i recovery.img -o device
+          if [ "${DEVICE_PATH:-}" != "device/samsung/gtaxladwifikx" ]; then
+            echo "::error::입력 이미지에서 SM-T583 트리를 생성하지 못했습니다: ${DEVICE_PATH:-unset}"
+            exit 1
+          fi
+
+      - name: Prepare OrangeFox device configuration
+        working-directory: ${{ env.WS }}
+        env:
+          DEVICE_PATH: ${{ steps.gdt.outputs.DEVICE_PATH }}
+        run: |
+          set -euo pipefail
+          TREE="$DEVICE_PATH"
+          CODENAME=gtaxladwifikx
+          if [ "$TREE" != "device/samsung/$CODENAME" ] || [ ! -d "$TREE" ]; then
+            echo "::error::예상하지 못한 SM-T583 기기 트리 경로: $TREE"
+            exit 1
+          fi
+          cd "$TREE"
+          if [ ! -f "omni_${CODENAME}.mk" ] || [ ! -f AndroidProducts.mk ]; then
+            echo "::error::생성된 트리에서 Omni product makefile을 찾지 못했습니다."
+            exit 1
+          fi
+
+          mv "omni_${CODENAME}.mk" "twrp_${CODENAME}.mk"
+          sed -i \
+            -e 's/omni_/twrp_/g' \
+            -e 's#vendor/omni/config/common.mk#vendor/twrp/config/common.mk#g' \
+            AndroidProducts.mk "twrp_${CODENAME}.mk"
+          if ! grep -Fq 'vendor/twrp/config/common.mk' "twrp_${CODENAME}.mk"; then
+            echo "::error::OrangeFox/TWRP 공통 product 설정을 적용하지 못했습니다."
+            exit 1
+          fi
+          if ! grep -Fq "PRODUCT_NAME := twrp_${CODENAME}" "twrp_${CODENAME}.mk"; then
+            echo "::error::lunch product 이름이 twrp_${CODENAME}이 아닙니다."
+            exit 1
+          fi
+
+          mkdir -p prebuilt recovery/root
+          python3 - "${WS}/recovery.img" <<'PY'
+          import hashlib
+          import struct
+          import sys
+          from pathlib import Path
+
+          image = Path(sys.argv[1]).read_bytes()
+          if len(image) < 44 or image[:8] != b"ANDROID!":
+              raise SystemExit("Android boot image header가 올바르지 않습니다.")
+          kernel_size, _, _, _, _, _, _, page_size, _ = struct.unpack("<9I", image[8:44])
+          if not kernel_size or page_size < 512:
+              raise SystemExit("Kernel size 또는 page size가 올바르지 않습니다.")
+          kernel = image[page_size:page_size + kernel_size]
+          if len(kernel) != kernel_size or kernel[56:60] != b"ARM\x64":
+              raise SystemExit("SM-T583용 ARM64 Image kernel을 찾지 못했습니다.")
+          Path("prebuilt/Image").write_bytes(kernel)
+          print("Kernel bytes:", len(kernel))
+          print("Kernel SHA-256:", hashlib.sha256(kernel).hexdigest())
+          PY
+
+          if [ ! -f "${GITHUB_WORKSPACE}/overrides/BoardConfig.mk" ]; then
+            echo "::error::SM-T583 BoardConfig override가 없습니다."
+            exit 1
+          fi
+          {
+            printf '\nDEVICE_PATH := %s\n' "$TREE"
+            cat "${GITHUB_WORKSPACE}/overrides/BoardConfig.mk"
+          } >> BoardConfig.mk
+
+          cp "${GITHUB_WORKSPACE}/overrides/init.recovery.samsungexynos7870.rc" recovery/root/
+          cp "${GITHUB_WORKSPACE}/overrides/init.recovery.usb.rc" recovery/root/
+          cp "${GITHUB_WORKSPACE}/overrides/init.recovery.usb.rc" \
+            "${WS}/bootable/recovery/etc/init.recovery.usb.rc"
+          mkdir -p recovery/root/sbin
+          cp "${GITHUB_WORKSPACE}/overrides/watchdogd.sh" recovery/root/sbin/
+          cp "${GITHUB_WORKSPACE}/overrides/usbwait.sh" recovery/root/sbin/
+          chmod 755 recovery/root/sbin/watchdogd.sh recovery/root/sbin/usbwait.sh
+
+      - name: Build OrangeFox recovery
+        timeout-minutes: 180
+        working-directory: ${{ env.WS }}
+        run: |
+          set -euo pipefail
+          export ALLOW_MISSING_DEPENDENCIES=true
+          export FOX_BUILD_DEVICE=gtaxladwifikx
+          export LC_ALL=C
+          source build/envsetup.sh
+          lunch twrp_gtaxladwifikx-bp2a-eng
+          set -o pipefail
+          mka recoveryimage -j"$(nproc)" 2>&1 | tee "${GITHUB_WORKSPACE}/orangefox-build.log"
+          IMAGE="out/target/product/gtaxladwifikx/recovery.img"
+          if [ ! -s "$IMAGE" ]; then
+            echo "::error::OrangeFox recovery.img 산출물을 찾지 못했습니다."
+            exit 1
+          fi
+          file "$IMAGE"
+          sha256sum "$IMAGE"
+
+      - name: Upload build outputs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: orangefox-sm-t583
+          if-no-files-found: warn
+          path: |
+            ${{ env.WS }}/out/target/product/gtaxladwifikx/recovery.img
+            orangefox-build.log
