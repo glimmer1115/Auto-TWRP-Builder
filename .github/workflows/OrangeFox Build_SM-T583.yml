@@ -162,7 +162,10 @@ jobs:
         working-directory: ${{ env.WS }}
         run: |
           set -euo pipefail
-          python3 "${GITHUB_WORKSPACE}/scripts/build.py" -i recovery.img -o device --first-api-level 23
+          # 값은 SM-T583 T583KOU1BTG1 기기 recovery 로그(iteration-107)에서 확인한 값입니다.
+          python3 "${GITHUB_WORKSPACE}/scripts/build.py" -i recovery.img -o device \
+            --default-prop ro.product.first_api_level=26 \
+            --default-prop ro.build.version.security_patch=2020-06-01
           if [ "${DEVICE_PATH:-}" != "device/samsung/gtaxladwifikx" ]; then
             echo "::error::입력 이미지에서 SM-T583 트리를 생성하지 못했습니다: ${DEVICE_PATH:-unset}"
             exit 1
