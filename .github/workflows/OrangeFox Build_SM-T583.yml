@@ -162,7 +162,7 @@ jobs:
         working-directory: ${{ env.WS }}
         run: |
           set -euo pipefail
-          python3 "${GITHUB_WORKSPACE}/scripts/build.py" -i recovery.img -o device
+          python3 "${GITHUB_WORKSPACE}/scripts/build.py" -i recovery.img -o device --first-api-level 26
           if [ "${DEVICE_PATH:-}" != "device/samsung/gtaxladwifikx" ]; then
             echo "::error::입력 이미지에서 SM-T583 트리를 생성하지 못했습니다: ${DEVICE_PATH:-unset}"
             exit 1
