@@ -34,13 +34,12 @@ GUI_NEW = (
     "\t\t}\n"
 )
 
-ADB_OLD = re.compile(
+ADB_ROOT_OLD = re.compile(
     r"on property:service\.adb\.root=1\n"
     r"[ \t]*write /sys/class/android_usb/android0/enable 0\n"
     r"[ \t]*restart adbd\n"
     r"[ \t]*write /sys/class/android_usb/android0/enable 1\n"
 )
-ADB_NEW = "on property:service.adb.root=1\n    start adbd\n"
 
 
 def patch_gui(text):
@@ -53,7 +52,7 @@ def patch_gui_step(_path=None, _text=None):
     return True
 
 
-def patch_debuggable_usb_enable(text):
+def patch_debuggable_startup(text):
     lines = text.splitlines(keepends=True)
     triggers = [
         index
@@ -71,28 +70,30 @@ def patch_debuggable_usb_enable(text):
             end = index
             break
 
-    enable_lines = [
+    startup_lines = [
         index
         for index in range(start + 1, end)
-        if re.fullmatch(
+        if re.fullmatch(r"[ \t]*start[ \t]+adbd[ \t]*(?:#.*)?", lines[index].rstrip("\r\n"))
+        or re.fullmatch(
             r"[ \t]*write[ \t]+/sys/class/android_usb/android0/enable[ \t]+1[ \t]*(?:#.*)?",
             lines[index].rstrip("\r\n"),
         )
     ]
-    if len(enable_lines) > 1:
+    if sum("start" in lines[index].split() for index in startup_lines) > 1:
+        raise SystemExit("ro.debuggable trigger 에서 adbd 시작이 여러 개 발견됐습니다.")
+    if sum("write" in lines[index].split() for index in startup_lines) > 1:
         raise SystemExit("ro.debuggable trigger 에서 조기 USB enable 이 여러 개 발견됐습니다.")
-    if not enable_lines:
-        return text
 
-    lines[enable_lines[0]] = ""
+    for index in startup_lines:
+        lines[index] = ""
     return "".join(lines)
 
 
 def patch_init_rc(text):
-    text = patch_debuggable_usb_enable(text)
-    updated, count = ADB_OLD.subn(ADB_NEW, text, count=1)
+    text = patch_debuggable_startup(text)
+    updated, count = ADB_ROOT_OLD.subn("", text, count=1)
     if count != 1:
-        raise SystemExit("init.rc 에서 adbd 재시작 블록을 찾지 못했습니다.")
+        raise SystemExit("init.rc 에서 service.adb.root USB 블록을 찾지 못했습니다.")
     return updated
 
 
@@ -275,27 +276,30 @@ def self_test():
         "    write /sys/class/android_usb/android0/enable 1\n"
         "\n"
         "on boot\n"
+        "    start adbd\n"
         "    write /sys/class/android_usb/android0/enable 1\n"
     )
     patched = patch_init_rc(init_rc)
-    if "restart adbd" in patched or "enable 0" in patched:
-        raise SystemExit("adbd restart remains")
+    if "restart adbd" in patched or "enable 0" in patched or "on property:service.adb.root=1" in patched:
+        raise SystemExit("generic adbd restart/start block remains")
     if "start adbd" not in patched:
         raise SystemExit("adbd start missing")
     debuggable_block = patched.split("on property:ro.debuggable=1", 1)[1].split("\non ", 1)[0]
-    if "write /sys/class/android_usb/android0/enable 1" in debuggable_block:
-        raise SystemExit("ro.debuggable trigger still enables the gadget early")
+    if "write /sys/class/android_usb/android0/enable 1" in debuggable_block or "start adbd" in debuggable_block:
+        raise SystemExit("ro.debuggable trigger still starts adbd or enables the gadget early")
     if patched.count("write /sys/class/android_usb/android0/enable 1") != 1:
         raise SystemExit("device-specific gadget enable was not preserved")
+    if patched.count("start adbd") != 1:
+        raise SystemExit("device-specific adbd start was not preserved")
     no_early_enable = (
         "on property:ro.debuggable=1\n"
         "    setprop service.adb.root 1\n"
     )
-    if patch_debuggable_usb_enable(no_early_enable) != no_early_enable:
-        raise SystemExit("init.rc without a generic USB enable was modified")
+    if patch_debuggable_startup(no_early_enable) != no_early_enable:
+        raise SystemExit("init.rc without generic startup actions was modified")
     print("init.rc: restart adbd removed")
-    print("init.rc: early ro.debuggable gadget enable removed; device enable preserved")
-    print("init.rc: ro.debuggable trigger without USB enable accepted")
+    print("init.rc: generic adbd start and gadget enable removed; device startup preserved")
+    print("init.rc: ro.debuggable trigger without generic startup accepted")
     rc_path = os.path.join(repo_root, "overrides", "init.recovery.samsungexynos7870.rc")
     usb_path = os.path.join(repo_root, "overrides", "init.recovery.usb.rc")
     wait_path = os.path.join(repo_root, "overrides", "usbwait.sh")

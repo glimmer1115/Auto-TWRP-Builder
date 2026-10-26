@@ -792,7 +792,23 @@ jobs:
           print('최종 크기 (트레일러 전)', len(out), '/', PART_SIZE)
           PY
           cd "$GITHUB_WORKSPACE/artifacts"
-          printf 'SEANDROIDENFORCE' >> recovery.img
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('recovery.img')
+          trailer = b'SEANDROIDENFORCE'
+          image = path.read_bytes()
+          original_size = len(image)
+          while image.endswith(trailer):
+              image = image[:-len(trailer)]
+          image += trailer
+          if image.endswith(trailer * 2):
+              raise SystemExit('최종 recovery.img 에 SEANDROIDENFORCE 가 중복됩니다.')
+          if len(image) > 39845888:
+              raise SystemExit('최종 recovery.img 가 파티션 크기 39845888 을 넘습니다.')
+          path.write_bytes(image)
+          print('SEANDROIDENFORCE 단일 부착:', original_size, '->', len(image))
+          PY
           if [ "$(tail -c 16 recovery.img)" != "SEANDROIDENFORCE" ]; then
             echo "::error::최종 recovery.img 끝에 SEANDROIDENFORCE 가 없습니다."
             exit 1
