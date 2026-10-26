@@ -37,6 +37,22 @@ def parse_prop_fallback(value):
     return name, prop_value
 
 
+def install_legacy_fstab_compatibility():
+    from sebaubuntu_libs.libandroid.fstab import FstabEntry
+
+    original_from_entry = FstabEntry.from_entry
+    legacy_fs_types = {'auto', 'emmc', 'ext2', 'ext3', 'ext4', 'f2fs', 'mtd', 'vfat', 'yaffs2'}
+
+    def from_entry(line):
+        fields = line.split()
+        if len(fields) == 4 and fields[1] in legacy_fs_types:
+            fields = [fields[2], fields[0], fields[1], '-', fields[3]]
+            line = ' '.join(fields)
+        return original_from_entry(line)
+
+    FstabEntry.from_entry = staticmethod(from_entry)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Auto-Twrp-Builder")
     parser.add_argument('-i', '--input', required=True, help='Recovery/Boot Image')
@@ -52,6 +68,7 @@ def main():
     args = parser.parse_args()
     if args.default_prop:
         install_prop_fallbacks(dict(args.default_prop))
+    install_legacy_fstab_compatibility()
 
     image_path = Path(args.input).expanduser()
     output_path = Path(args.output).expanduser()
