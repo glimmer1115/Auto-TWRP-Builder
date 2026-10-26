@@ -64,10 +64,33 @@ jobs:
           sudo chmod a+x /usr/local/bin/repo
           repo --version
 
-      - name: Initialize OrangeFox manifest
-        timeout-minutes: 30
+      - name: Configure GitLab manifest authentication
+        env:
+          GITLAB_MANIFEST_TOKEN: ${{ secrets.GITLAB_MANIFEST_TOKEN }}
         run: |
           set -euo pipefail
+          if [ -z "${GITLAB_MANIFEST_TOKEN:-}" ]; then
+            echo "::error::GitHub Actions secret GITLAB_MANIFEST_TOKEN is required (GitLab read_repository scope)."
+            exit 1
+          fi
+          cat > "$RUNNER_TEMP/git-askpass.sh" <<'EOF'
+          #!/bin/sh
+          case "$1" in
+            *Username*) printf '%s\n' oauth2 ;;
+            *Password*) printf '%s\n' "$GITLAB_MANIFEST_TOKEN" ;;
+            *) exit 1 ;;
+          esac
+          EOF
+          chmod 700 "$RUNNER_TEMP/git-askpass.sh"
+
+      - name: Initialize OrangeFox manifest
+        timeout-minutes: 30
+        env:
+          GITLAB_MANIFEST_TOKEN: ${{ secrets.GITLAB_MANIFEST_TOKEN }}
+        run: |
+          set -euo pipefail
+          export GIT_ASKPASS="$RUNNER_TEMP/git-askpass.sh"
+          export GIT_TERMINAL_PROMPT=0
           mkdir -p "$WS"
           cd "$WS"
           git config --global user.name "github-actions[bot]"
@@ -96,8 +119,12 @@ jobs:
       - name: Sync OrangeFox sources
         timeout-minutes: 180
         working-directory: ${{ env.WS }}
+        env:
+          GITLAB_MANIFEST_TOKEN: ${{ secrets.GITLAB_MANIFEST_TOKEN }}
         run: |
           set -euo pipefail
+          export GIT_ASKPASS="$RUNNER_TEMP/git-askpass.sh"
+          export GIT_TERMINAL_PROMPT=0
           repo sync --jobs=4 --force-sync --no-clone-bundle --no-tags -c --fail-fast
 
       - name: Download and validate recovery image
