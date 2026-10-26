@@ -1,0 +1,42 @@
+SM-T583 RECOVERY - KEY POINTS (REFERENCE ONLY)
+
+This file condenses prior session notes. It is reference material, not an
+approved device configuration. Do not automatically apply historical patches,
+settings, assumptions, or workflow behavior.
+
+DEVICE
+Samsung SM-T583 / Exynos 7870 / gtaxladwifikx / Wi-Fi.
+Education B2B status, bootloader unlock, and Knox FOTA removal are user-reported
+context; they do not prove recovery compatibility or explain a boot result.
+
+KNOWN STOCK INPUT
+AP-extracted recovery.img: 23,753,248 bytes.
+SHA-256: 2F9D11FE10E12953486290C9A388EBC23A257D71B167930671159387719CB0ED
+User reports that flashing this AP image boots normally.
+Do not confuse it with the 39,845,888-byte recovery partition dump.
+
+REPORTED TWRP RESULTS
+Recovery ADB was reported unavailable and the backlight remained on in prior
+tests. Those reports are not tied to a verified flashed-image hash in every
+case, so they do not establish a single root cause.
+
+BUILD PROVENANCE
+Actions #113 completed build and packaging at commit 15bb40f. This is not proof
+of successful device boot. Commit 20783d6 was not included in #113.
+
+ANALYSIS REFERENCE
+Compare the known-good AP ramdisk with the exact TWRP output ramdisk. Inspect
+CPIO paths, entry types, modes, symlinks, properties, fstab, init imports,
+device-specific RC selection, and executable ABI. Separate ramdisk findings
+from kernel, DT, boot header, and package metadata. Missing TWRP-only text in
+stock is expected; do not copy init rules blindly.
+
+WORKING RULE
+Separate verified facts from hypotheses. No historical tweak is a default.
+Analyze first; make no file, build, flash, commit, or push changes without an
+explicit request. Do not repeat builds unless the test distinguishes a stated
+hypothesis. Do not switch recovery projects without device-specific evidence.
+
+The old iteration files were removed from the current tree at the user's
+request. Their contents may remain in earlier Git commits; repository history
+was not rewritten.
