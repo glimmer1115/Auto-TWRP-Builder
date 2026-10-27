@@ -252,11 +252,10 @@ jobs:
           export ALLOW_MISSING_DEPENDENCIES=true
           export FOX_BUILD_DEVICE=gtaxladwifikx
           export LC_ALL=C
+          # envsetup.sh/lunch/mka reference unset variables (e.g. BUILD_VAR_CACHE_READY), so nounset must stay off.
           set +u
           source build/envsetup.sh
-          set -u
           lunch twrp_gtaxladwifikx-bp2a-eng
-          set -o pipefail
           mka recoveryimage -j"$(nproc)" 2>&1 | tee "${GITHUB_WORKSPACE}/orangefox-build.log"
           IMAGE="out/target/product/gtaxladwifikx/recovery.img"
           if [ ! -s "$IMAGE" ]; then
