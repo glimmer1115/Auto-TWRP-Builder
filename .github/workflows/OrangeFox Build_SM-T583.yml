@@ -36,8 +36,8 @@ jobs:
             /usr/local/share/chromium /usr/local/share/powershell
           df -h /
           avail_kb=$(df -Pk / | awk 'NR==2 {print $4}')
-          if [ "$avail_kb" -lt 58720256 ]; then
-            echo "::error::56 GiB 미만의 여유 공간으로는 스왑 24 GiB와 출력 공간 32 GiB를 확보할 수 없습니다."
+          if [ "$avail_kb" -lt 50331648 ]; then
+            echo "::error::48 GiB 미만의 여유 공간으로는 스왑 16 GiB와 출력 공간 32 GiB를 확보할 수 없습니다."
             exit 1
           fi
 
@@ -140,9 +140,9 @@ jobs:
           rm -rf .repo/projects .repo/project-objects cts prebuilts/abi-dumps
           df -h /
 
-      - name: Configure 24 GiB swap for Soong
+      - name: Configure 16 GiB swap for Soong
         env:
-          SWAP_GIB: 24
+          SWAP_GIB: 16
           MIN_OUT_GIB: 32
         run: bash "${GITHUB_WORKSPACE}/scripts/setup_swap.sh"
 
@@ -361,3 +361,30 @@ jobs:
             soong.log
             soong.*.extra.variables
             verbose.log.gz
+
+      - name: Notify Telegram on build success
+        if: success()
+        continue-on-error: true
+        uses: appleboy/telegram-action@390cf7345777cd821dba28c72f436a78bce19cc5
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            🎉 *OrangeFox 리커버리 빌드 성공!*
+
+            ✨ 빌드가 정상적으로 완료되었습니다.
+            딸깍용 장난감에 올릴 준비를 하세요! 🚀
+
+      - name: Notify Telegram on build failure
+        if: failure()
+        continue-on-error: true
+        uses: appleboy/telegram-action@390cf7345777cd821dba28c72f436a78bce19cc5
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            🚨 *OrangeFox 빌드 실패 (에러 발생)*
+
+            빌드 로그와 업로드된 진단 아티팩트를 확인해 주세요.

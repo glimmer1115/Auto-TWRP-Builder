@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SWAP_FILE=/mnt/swapfile
-SWAP_GIB=${SWAP_GIB:-24}
+SWAP_GIB=${SWAP_GIB:-16}
 MIN_OUT_GIB=${MIN_OUT_GIB:-32}
 SWAP_DIR=$(dirname "$SWAP_FILE")
 
