@@ -40,6 +40,17 @@ jobs:
             exit 1
           fi
 
+      - name: Add swap for soong analysis
+        run: |
+          set -euo pipefail
+          sudo swapoff -a || true
+          sudo fallocate -l 10G /mnt/swapfile
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+          free -h
+          df -h /mnt
+
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -257,6 +268,27 @@ jobs:
           export LC_ALL=C
           # envsetup.sh/lunch/mka reference unset variables (e.g. BUILD_VAR_CACHE_READY), so nounset must stay off.
           set +u
+          BUILD_LOG="${GITHUB_WORKSPACE}/orangefox-build.log"
+          # 라이브 로그에 상태를 남기고, 10분간 빌드 로그가 멈추면 soong_build에 SIGQUIT(Go goroutine dump)를 보냅니다.
+          (
+            while true; do
+              sleep 60
+              {
+                echo "::group::monitor $(date +%T)"
+                free -m | sed -n '2,3p'; df -Pm / | tail -1
+                ps -eo pid,etimes,pcpu,pmem,rss,stat,args --sort=-pcpu | head -8 | cut -c1-200
+                tail -n 3 out/soong.log out/error.log 2>/dev/null || true
+                echo "::endgroup::"
+              } | tee -a "${GITHUB_WORKSPACE}/mem-monitor.log"
+              if [ -f "$BUILD_LOG" ] && [ $(( $(date +%s) - $(stat -c %Y "$BUILD_LOG") )) -gt 600 ]; then
+                echo "::warning::빌드 로그가 10분간 멈춰 soong_build 상태를 덤프합니다."
+                pkill -QUIT -f 'soong_build' || true
+                sleep 20
+                pkill -TERM -f 'soong_ui' || true
+                break
+              fi
+            done
+          ) &
           source build/envsetup.sh
           lunch twrp_gtaxladwifikx-bp2a-eng
           mka recoveryimage -j"$(nproc)" 2>&1 | tee "${GITHUB_WORKSPACE}/orangefox-build.log"
@@ -268,6 +300,22 @@ jobs:
           file "$IMAGE"
           sha256sum "$IMAGE"
 
+      - name: Collect failure diagnostics
+        if: always()
+        working-directory: ${{ env.WS }}
+        run: |
+          {
+            echo '--- dmesg OOM/kill ---'
+            sudo dmesg 2>/dev/null | grep -iE 'out of memory|oom-kill|killed process' | tail -20 || true
+            echo '--- free/df ---'
+            free -h || true
+            df -h / || true
+          } > "${GITHUB_WORKSPACE}/diagnostics.log" 2>&1
+          for f in out/error.log out/soong.log out/verbose.log.gz; do
+            [ -f "$f" ] && cp "$f" "${GITHUB_WORKSPACE}/$(basename "$f")" || true
+          done
+          tail -40 "${GITHUB_WORKSPACE}/diagnostics.log"
+
       - name: Upload build outputs
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -277,3 +325,8 @@ jobs:
           path: |
             ${{ env.WS }}/out/target/product/gtaxladwifikx/recovery.img
             orangefox-build.log
+            mem-monitor.log
+            diagnostics.log
+            error.log
+            soong.log
+            verbose.log.gz
