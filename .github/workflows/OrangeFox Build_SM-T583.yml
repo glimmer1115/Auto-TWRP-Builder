@@ -236,6 +236,12 @@ jobs:
             echo "::error::lunch product 이름이 twrp_${CODENAME}이 아닙니다."
             exit 1
           fi
+          # 따옴표와 공백이 든 PRIVATE_BUILD_DESC가 Soong extra.variables JSON을 깨뜨렸습니다(실행 40465745686, line 40 column 30).
+          sed -i '/^PRODUCT_BUILD_PROP_OVERRIDES += \\$/{N;/PRIVATE_BUILD_DESC=/d}' "twrp_${CODENAME}.mk"
+          if grep -Fq PRIVATE_BUILD_DESC "twrp_${CODENAME}.mk"; then
+            echo "::error::PRIVATE_BUILD_DESC를 제거하지 못했습니다."
+            exit 1
+          fi
 
           mkdir -p prebuilt recovery/root
           python3 - "${WS}/recovery.img" <<'PY'
@@ -279,6 +285,13 @@ jobs:
           cp "${GITHUB_WORKSPACE}/overrides/usbwait.sh" recovery/root/sbin/
           chmod 755 recovery/root/sbin/watchdogd.sh recovery/root/sbin/usbwait.sh
 
+      - name: Restore ccache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /tmp/ccache
+          key: ccache-orangefox-${{ github.run_id }}
+          restore-keys: ccache-orangefox-
+
       - name: Build OrangeFox recovery
         timeout-minutes: 180
         working-directory: ${{ env.WS }}
@@ -289,13 +302,30 @@ jobs:
           export LC_ALL=C
           # soong_build가 16 GiB 러너에서 RSS 14 GiB까지 증가해 스왑이 소진됐으므로 Go GC가 일찍 회수하도록 제한합니다.
           export GOGC=50 GOMEMLIMIT=10GiB
+          # 컴파일 출력(약 1시간)을 다음 실행에 재사용합니다. 경로가 같아야 캐시가 적중합니다.
+          export USE_CCACHE=1 CCACHE_EXEC=/usr/bin/ccache CCACHE_DIR=/tmp/ccache CCACHE_MAXSIZE=6G
+          export CCACHE_BASEDIR=/tmp/orangefox CCACHE_NOHASHDIR=true CCACHE_COMPILERCHECK=string:clang-r547379
+          mkdir -p "$CCACHE_DIR"
+          ccache -s | head -5 || true
           # envsetup.sh/lunch/mka reference unset variables (e.g. BUILD_VAR_CACHE_READY), so nounset must stay off.
           set +u
           # 라이브 로그에 상태를 남기고, soong_build의 CPU 시간이 15분간 늘지 않으면 SIGQUIT(Go goroutine dump)를 보냅니다.
           (
-            last_sig=""; last_cpu=""; cpu_since=$(date +%s)
+            last_sig=""; last_cpu=""; json_ok=""; cpu_since=$(date +%s)
             while true; do
               sleep 60
+              EXTRA="out/soong/soong.twrp_gtaxladwifikx.extra.variables"
+              # product config가 만든 JSON이 깨졌으면 93%까지 가지 않고 바로 중단합니다.
+              if [ -z "$json_ok" ] && [ -f "$EXTRA" ] && [ $(( $(date +%s) - $(stat -c %Y "$EXTRA") )) -gt 20 ]; then
+                if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$EXTRA" 2>"$RUNNER_TEMP/json.err"; then
+                  json_ok=1; echo "extra.variables JSON 검사 통과"
+                else
+                  echo "::error::extra.variables JSON이 잘못되어 빌드를 즉시 중단합니다: $(tail -n 1 "$RUNNER_TEMP/json.err")"
+                  sed -n '36,44p' "$EXTRA" | cut -c1-200
+                  pkill -TERM -f 'soong_ui' || true
+                  break
+                fi
+              fi
               SB_PID=$(pgrep -n -f 'bin/soong_build --top' || true)
               sig=$(tail -n 3 out/soong.log out/error.log 2>/dev/null | cksum || true)
               if [ "$sig" = "$last_sig" ]; then
@@ -357,10 +387,18 @@ jobs:
             free -h || true
             df -h / || true
           } > "${GITHUB_WORKSPACE}/diagnostics.log" 2>&1
-          for f in out/error.log out/soong.log out/verbose.log.gz; do
+          for f in out/error.log out/soong.log out/verbose.log.gz out/soong/soong.*.extra.variables; do
             [ -f "$f" ] && cp "$f" "${GITHUB_WORKSPACE}/$(basename "$f")" || true
           done
+          CCACHE_DIR=/tmp/ccache ccache -s >> "${GITHUB_WORKSPACE}/diagnostics.log" 2>&1 || true
           tail -40 "${GITHUB_WORKSPACE}/diagnostics.log"
+
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /tmp/ccache
+          key: ccache-orangefox-${{ github.run_id }}
 
       - name: Upload build outputs
         if: always()
@@ -376,4 +414,5 @@ jobs:
             diagnostics.log
             error.log
             soong.log
+            soong.*.extra.variables
             verbose.log.gz
