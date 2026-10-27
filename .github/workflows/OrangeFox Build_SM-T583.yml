@@ -133,7 +133,8 @@ jobs:
           repo sync --jobs-network=16 --jobs-checkout=4 --optimized-fetch --retry-fetches=3 \
             --force-sync --no-clone-bundle --no-tags -c --fail-fast
           echo "repo sync 소요: $(( $(date +%s) - SYNC_START ))초, 프로젝트 수: $(repo list | wc -l)"
-          { du -sm .repo; du -sm -- */ | sort -rn | awk 'NR<=15'; } || true
+          { du -sm .repo; du -sm -- */ | sort -rn | awk 'NR<=15'; echo '--- prebuilts 하위 ---'; du -sm -- prebuilts/*/ | sort -rn | awk 'NR<=20'; } || true
+          cp /tmp/orangefox-manifest.xml "${GITHUB_WORKSPACE}/orangefox-manifest.xml"
 
       - name: Size swap for soong analysis
         run: |
@@ -360,6 +361,7 @@ jobs:
           path: |
             ${{ env.WS }}/out/target/product/gtaxladwifikx/recovery.img
             orangefox-build.log
+            orangefox-manifest.xml
             mem-monitor.log
             diagnostics.log
             error.log
