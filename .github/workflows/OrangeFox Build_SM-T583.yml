@@ -233,7 +233,10 @@ jobs:
           {
             printf '\nDEVICE_PATH := %s\n' "$TREE"
             cat "${GITHUB_WORKSPACE}/overrides/BoardConfig.mk"
+            # Android 16 build/make rejects armv7-a-neon for 32-bit ARM targets.
+            printf '\nTARGET_ARCH_VARIANT := armv8-a\n'
           } >> BoardConfig.mk
+          grep -n '^TARGET_ARCH_VARIANT' BoardConfig.mk
 
           cp "${GITHUB_WORKSPACE}/overrides/init.recovery.samsungexynos7870.rc" recovery/root/
           cp "${GITHUB_WORKSPACE}/overrides/init.recovery.usb.rc" recovery/root/
