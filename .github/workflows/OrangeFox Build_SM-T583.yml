@@ -32,11 +32,12 @@ jobs:
         run: |
           set -euo pipefail
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-            /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift \
+            /usr/local/share/chromium /usr/local/share/powershell
           df -h /
           avail_kb=$(df -Pk / | awk 'NR==2 {print $4}')
-          if [ "$avail_kb" -lt 41943040 ]; then
-            echo "::error::40 GiB 미만의 여유 공간으로 Android 16 빌드를 시작할 수 없습니다."
+          if [ "$avail_kb" -lt 58720256 ]; then
+            echo "::error::56 GiB 미만의 여유 공간으로는 스왑 24 GiB와 출력 공간 32 GiB를 확보할 수 없습니다."
             exit 1
           fi
 
@@ -139,25 +140,11 @@ jobs:
           rm -rf .repo/projects .repo/project-objects cts prebuilts/abi-dumps
           df -h /
 
-      - name: Size swap for soong analysis
-        run: |
-          set -euo pipefail
-          # soong_build 분석 단계에서 스왑 사용량 최대 11.8 GiB가 관측되어(실행 40452716751) 12 GiB로 고정합니다.
-          sudo swapoff -a || true
-          sudo rm -f /mnt/swapfile
-          avail_gb=$(df -Pk / | awk 'NR==2 {print int($4/1048576)}')
-          swap_gb=12
-          if [ $(( avail_gb - swap_gb )) -lt 20 ]; then
-            echo "::error::여유 디스크 ${avail_gb} GiB로는 스왑 ${swap_gb} GiB와 out 디렉터리 20 GiB를 함께 확보할 수 없습니다."
-            df -h /
-            exit 1
-          fi
-          sudo fallocate -l "${swap_gb}G" /mnt/swapfile
-          sudo chmod 600 /mnt/swapfile
-          sudo mkswap /mnt/swapfile
-          sudo swapon /mnt/swapfile
-          free -h
-          df -h /
+      - name: Configure 24 GiB swap for Soong
+        env:
+          SWAP_GIB: 24
+          MIN_OUT_GIB: 32
+        run: bash "${GITHUB_WORKSPACE}/scripts/setup_swap.sh"
 
       - name: Download and validate recovery image
         working-directory: ${{ env.WS }}
