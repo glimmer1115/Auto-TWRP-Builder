@@ -1,4 +1,368 @@
-      - name: 🟢 빌드 성공 알림 전송
+name: OrangeFox Recovery Build (SM-T583)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    env:
+      WS: /tmp/orangefox
+
+    steps:
+      - name: Checkout builder
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Download last verified TWRP recovery
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: twrp-gtaxladwifikx
+          run-id: 40253587740
+          github-token: ${{ github.token }}
+          path: /tmp/twrp-input
+
+      - name: Reclaim runner disk space
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift \
+            /usr/local/share/chromium /usr/local/share/powershell
+          df -h /
+          avail_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+          if [ "$avail_kb" -lt 50331648 ]; then
+            echo "::error::48 GiB 미만의 여유 공간으로는 스왑 16 GiB와 출력 공간 32 GiB를 확보할 수 없습니다."
+            exit 1
+          fi
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison build-essential ccache curl flex g++-multilib gcc-multilib \
+            git gnupg gperf imagemagick lib32readline-dev lib32z1-dev libelf-dev \
+            liblz4-tool libncurses5-dev libncursesw5-dev libssl-dev libxml2 \
+            libxml2-utils lzop pngcrush python3 python3-pip rsync schedtool \
+            squashfs-tools unzip xsltproc zip zlib1g-dev
+          python3 -m pip install --user -U twrpdtgen
+
+      - name: Install Java and repo
+        uses: actions/setup-java@6a0805fcefea3d4657a47ac4c165951e33482018 # v4.2.2
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install repo tool
+        run: |
+          sudo curl -fsSL --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 120 \
+            https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
+          sudo chmod a+x /usr/local/bin/repo
+          repo --version
+
+      - name: Configure GitLab manifest authentication
+        env:
+          GITLAB_MANIFEST_TOKEN: ${{ secrets.GITLAB_MANIFEST_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GITLAB_MANIFEST_TOKEN:-}" ]; then
+            echo "::error::GitHub Actions secret GITLAB_MANIFEST_TOKEN is required (GitLab read_repository scope)."
+            exit 1
+          fi
+          cat > "$RUNNER_TEMP/git-askpass.sh" <<'EOF'
+          #!/bin/sh
+          case "$1" in
+            *Username*) printf '%s\n' oauth2 ;;
+            *Password*) printf '%s\n' "$GITLAB_MANIFEST_TOKEN" ;;
+            *) exit 1 ;;
+          esac
+          EOF
+          chmod 700 "$RUNNER_TEMP/git-askpass.sh"
+
+      - name: Initialize OrangeFox manifest
+        timeout-minutes: 30
+        env:
+          GITLAB_MANIFEST_TOKEN: ${{ secrets.GITLAB_MANIFEST_TOKEN }}
+        run: |
+          set -euo pipefail
+          export GIT_ASKPASS="$RUNNER_TEMP/git-askpass.sh"
+          export GIT_TERMINAL_PROMPT=0
+          mkdir -p "$WS"
+          cd "$WS"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global color.ui false
+          repo init --depth=1 \
+            -u https://gitlab.com/sm-t583/Manifest.git \
+            -b c5bc4610ea5ace4b2d1f74278b99574e93adf6f8
+          test "$(git -C .repo/manifests rev-parse HEAD)" = \
+            "c5bc4610ea5ace4b2d1f74278b99574e93adf6f8"
+
+          mkdir -p .repo/local_manifests
+          cat > .repo/local_manifests/gtaxladwifikx.xml <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <manifest>
+            <remove-project path="device/xiaomi/mondrian" />
+            <remove-project path="device/xiaomi/sm84xx-common" />
+          </manifest>
+          EOF
+          repo manifest -o /tmp/orangefox-manifest.xml
+          if grep -Eq 'device/xiaomi/(mondrian|sm84xx-common)' /tmp/orangefox-manifest.xml; then
+            echo "::error::Xiaomi 기기 트리가 resolved manifest에서 제거되지 않았습니다."
+            exit 1
+          fi
+
+      - name: Sync OrangeFox sources
+        timeout-minutes: 180
+        working-directory: ${{ env.WS }}
+        env:
+          GITLAB_MANIFEST_TOKEN: ${{ secrets.GITLAB_MANIFEST_TOKEN }}
+        run: |
+          set -euo pipefail
+          export GIT_ASKPASS="$RUNNER_TEMP/git-askpass.sh"
+          export GIT_TERMINAL_PROMPT=0
+          # repo는 비TTY에서 진행률을 출력하지 않으므로 디스크 사용량을 주기적으로 남깁니다.
+          ( while true; do sleep 60; echo "sync-heartbeat $(date +%T) used=$(df -Pm / | awk 'NR==2 {print $3}')MB"; done ) &
+          HEARTBEAT=$!
+          trap 'kill "$HEARTBEAT" 2>/dev/null || true' EXIT
+          SYNC_START=$(date +%s)
+          repo sync --jobs-network=16 --jobs-checkout=4 --optimized-fetch --retry-fetches=3 \
+            --force-sync --no-clone-bundle --no-tags -c --fail-fast
+          echo "repo sync 소요: $(( $(date +%s) - SYNC_START ))초, 프로젝트 수: $(repo list | wc -l)"
+          { du -sm .repo; du -sm -- */ | sort -rn | awk 'NR<=15'; echo '--- prebuilts 하위 ---'; du -sm -- prebuilts/*/ | sort -rn | awk 'NR<=20'; } || true
+          cp /tmp/orangefox-manifest.xml "${GITHUB_WORKSPACE}/orangefox-manifest.xml"
+          # 실행 40456463445에서 out 디렉터리가 남은 10 GiB를 초과해 디스크가 100%가 되어 Runner.Worker가 종료됐습니다.
+          rm -rf .repo/projects .repo/project-objects cts prebuilts/abi-dumps
+          df -h /
+
+      - name: Configure 16 GiB swap for Soong
+        env:
+          SWAP_GIB: 16
+          MIN_OUT_GIB: 32
+        run: bash "${GITHUB_WORKSPACE}/scripts/setup_swap.sh"
+
+      - name: Download and validate recovery image
+        working-directory: ${{ env.WS }}
+        run: |
+          set -euo pipefail
+          SOURCE_IMAGE=/tmp/twrp-input/recovery.img
+          if [ ! -s "$SOURCE_IMAGE" ]; then
+            echo "::error::TWRP artifact에서 recovery.img를 찾지 못했습니다."
+            exit 1
+          fi
+          cp "$SOURCE_IMAGE" recovery.img
+          actual_sha256="$(sha256sum recovery.img | cut -d ' ' -f 1)"
+          expected_sha256=bc2202cadc9d7fb556e28badd531b021555c1c1137ae6bc78b04c8bcf0037bc1
+          if [ "$actual_sha256" != "$expected_sha256" ]; then
+            echo "::error::이미지가 마지막 검증 TWRP 빌드와 일치하지 않습니다. stock 또는 다른 파일은 사용할 수 없습니다."
+            exit 1
+          fi
+          if [ "$(stat -c '%s' recovery.img)" != "31246352" ]; then
+            echo "::error::TWRP 이미지 크기가 마지막 검증 산출물과 다릅니다."
+            exit 1
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+
+          image = Path("recovery.img").read_bytes()
+          if image[:8] != b"ANDROID!":
+              raise SystemExit("입력 파일이 Android boot/recovery 이미지가 아닙니다.")
+          print("Recovery image bytes:", len(image))
+          PY
+          sha256sum recovery.img
+
+      - name: Generate SM-T583 device tree
+        id: gdt
+        working-directory: ${{ env.WS }}
+        run: |
+          set -euo pipefail
+          # 값은 SM-T583 T583KOU1BTG1 기기 recovery 로그(iteration-107)에서 확인한 값입니다.
+          python3 "${GITHUB_WORKSPACE}/scripts/build.py" -i recovery.img -o device \
+            --default-prop ro.product.first_api_level=26 \
+            --default-prop ro.build.version.security_patch=2020-06-01
+          # 스텝 출력은 이 스텝이 끝난 뒤에야 읽히므로 생성된 디렉터리를 직접 확인합니다.
+          if [ ! -f device/samsung/gtaxladwifikx/Android.bp ]; then
+            echo "::error::입력 이미지에서 SM-T583 트리를 생성하지 못했습니다."
+            ls -R device | head -50 || true
+            exit 1
+          fi
+
+      - name: Prepare OrangeFox device configuration
+        working-directory: ${{ env.WS }}
+        env:
+          DEVICE_PATH: ${{ steps.gdt.outputs.DEVICE_PATH }}
+        run: |
+          set -euo pipefail
+          TREE="$DEVICE_PATH"
+          CODENAME=gtaxladwifikx
+          if [ "$TREE" != "device/samsung/$CODENAME" ] || [ ! -d "$TREE" ]; then
+            echo "::error::예상하지 못한 SM-T583 기기 트리 경로: $TREE"
+            exit 1
+          fi
+          cd "$TREE"
+          if [ ! -f "omni_${CODENAME}.mk" ] || [ ! -f AndroidProducts.mk ]; then
+            echo "::error::생성된 트리에서 Omni product makefile을 찾지 못했습니다."
+            exit 1
+          fi
+
+          mv "omni_${CODENAME}.mk" "twrp_${CODENAME}.mk"
+          sed -i \
+            -e 's/omni_/twrp_/g' \
+            -e 's#vendor/omni/config/common.mk#vendor/twrp/config/common.mk#g' \
+            AndroidProducts.mk "twrp_${CODENAME}.mk"
+          if ! grep -Fq 'vendor/twrp/config/common.mk' "twrp_${CODENAME}.mk"; then
+            echo "::error::OrangeFox/TWRP 공통 product 설정을 적용하지 못했습니다."
+            exit 1
+          fi
+          if ! grep -Fq "PRODUCT_NAME := twrp_${CODENAME}" "twrp_${CODENAME}.mk"; then
+            echo "::error::lunch product 이름이 twrp_${CODENAME}이 아닙니다."
+            exit 1
+          fi
+          # 따옴표와 공백이 든 PRIVATE_BUILD_DESC가 Soong extra.variables JSON을 깨뜨렸습니다(실행 40465745686, line 40 column 30).
+          sed -i '/^PRODUCT_BUILD_PROP_OVERRIDES += \\$/{N;/PRIVATE_BUILD_DESC=/d}' "twrp_${CODENAME}.mk"
+          if grep -Fq PRIVATE_BUILD_DESC "twrp_${CODENAME}.mk"; then
+            echo "::error::PRIVATE_BUILD_DESC를 제거하지 못했습니다."
+            exit 1
+          fi
+
+          mkdir -p prebuilt recovery/root
+          python3 - "${WS}/recovery.img" <<'PY'
+          import hashlib
+          import struct
+          import sys
+          from pathlib import Path
+
+          image = Path(sys.argv[1]).read_bytes()
+          if len(image) < 44 or image[:8] != b"ANDROID!":
+              raise SystemExit("Android boot image header가 올바르지 않습니다.")
+          kernel_size, _, _, _, _, _, _, page_size, _ = struct.unpack("<9I", image[8:44])
+          if not kernel_size or page_size < 512:
+              raise SystemExit("Kernel size 또는 page size가 올바르지 않습니다.")
+          kernel = image[page_size:page_size + kernel_size]
+          if len(kernel) != kernel_size or kernel[56:60] != b"ARM\x64":
+              raise SystemExit("SM-T583용 ARM64 Image kernel을 찾지 못했습니다.")
+          Path("prebuilt/Image").write_bytes(kernel)
+          print("Kernel bytes:", len(kernel))
+          print("Kernel SHA-256:", hashlib.sha256(kernel).hexdigest())
+          PY
+
+          if [ ! -f "${GITHUB_WORKSPACE}/overrides/BoardConfig.mk" ]; then
+            echo "::error::SM-T583 BoardConfig override가 없습니다."
+            exit 1
+          fi
+          {
+            printf '\nDEVICE_PATH := %s\n' "$TREE"
+            cat "${GITHUB_WORKSPACE}/overrides/BoardConfig.mk"
+            # Android 16 build/make rejects armv7-a-neon for 32-bit ARM targets.
+            printf '\nTARGET_ARCH_VARIANT := armv8-a\n'
+            # 따옴표가 포함된 값이 soong extra.variables에 그대로 기록되어 JSON이 깨졌습니다(실행 40476124388, RecoveryPixelFormat).
+            printf 'TARGET_RECOVERY_PIXEL_FORMAT := ABGR_8888\n'
+          } >> BoardConfig.mk
+          grep -n -e '^TARGET_ARCH_VARIANT' -e '^TARGET_RECOVERY_PIXEL_FORMAT' BoardConfig.mk
+          if [ "$(grep '^TARGET_RECOVERY_PIXEL_FORMAT' BoardConfig.mk | tail -n 1)" != 'TARGET_RECOVERY_PIXEL_FORMAT := ABGR_8888' ]; then
+            echo "::error::TARGET_RECOVERY_PIXEL_FORMAT 최종 값에 따옴표가 남아 있습니다."
+            exit 1
+          fi
+
+          cp "${GITHUB_WORKSPACE}/overrides/init.recovery.samsungexynos7870.rc" recovery/root/
+          cp "${GITHUB_WORKSPACE}/overrides/init.recovery.usb.rc" recovery/root/
+          cp "${GITHUB_WORKSPACE}/overrides/init.recovery.usb.rc" \
+            "${WS}/bootable/recovery/etc/init.recovery.usb.rc"
+          mkdir -p recovery/root/sbin
+          cp "${GITHUB_WORKSPACE}/overrides/watchdogd.sh" recovery/root/sbin/
+          cp "${GITHUB_WORKSPACE}/overrides/usbwait.sh" recovery/root/sbin/
+          chmod 755 recovery/root/sbin/watchdogd.sh recovery/root/sbin/usbwait.sh
+
+      - name: Restore ccache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /tmp/ccache
+          key: ccache-orangefox-${{ github.run_id }}
+          restore-keys: ccache-orangefox-
+
+      - name: Build OrangeFox recovery
+        timeout-minutes: 180
+        working-directory: ${{ env.WS }}
+        run: |
+          set -euo pipefail
+          export ALLOW_MISSING_DEPENDENCIES=true
+          export FOX_BUILD_DEVICE=gtaxladwifikx
+          export LC_ALL=C
+          # 컴파일 출력(약 1시간)을 다음 실행에 재사용합니다. 경로가 같아야 캐시가 적중합니다.
+          export USE_CCACHE=1 CCACHE_EXEC=/usr/bin/ccache CCACHE_DIR=/tmp/ccache CCACHE_MAXSIZE=6G
+          export CCACHE_BASEDIR=/tmp/orangefox CCACHE_NOHASHDIR=true CCACHE_COMPILERCHECK=string:clang-r547379
+          mkdir -p "$CCACHE_DIR"
+          ccache -s | head -5 || true
+          # envsetup.sh/lunch/mka reference unset variables (e.g. BUILD_VAR_CACHE_READY), so nounset must stay off.
+          set +u
+          # soong_ui가 soong_build를 `env -i`로 실행해 GOGC/GOMEMLIMIT 환경변수가 전달되지 않으므로(실행 40476124388 로그) 소스에 직접 넣습니다.
+          SB_MAIN=build/soong/cmd/soong_build/main.go
+          if ! grep -q 'debug.SetMemoryLimit' "$SB_MAIN"; then
+            grep -q '"runtime/debug"' "$SB_MAIN" || sed -i '0,/^import (/s//import (\n\t"runtime\/debug"/' "$SB_MAIN"
+            sed -i '0,/^func main() {/s//func main() {\n\tdebug.SetGCPercent(50)\n\tdebug.SetMemoryLimit(10 << 30)/' "$SB_MAIN"
+          fi
+          if ! grep -q 'debug.SetMemoryLimit(10 << 30)' "$SB_MAIN" || ! grep -q '"runtime/debug"' "$SB_MAIN"; then
+            echo "::error::soong_build 메모리 제한 패치를 적용하지 못했습니다."
+            exit 1
+          fi
+          grep -n -B1 -A3 'debug.SetGCPercent' "$SB_MAIN"
+          source build/envsetup.sh
+          lunch twrp_gtaxladwifikx-bp2a-eng
+          mka recoveryimage -j"$(nproc)" 2>&1 | tee "${GITHUB_WORKSPACE}/orangefox-build.log"
+          IMAGE="out/target/product/gtaxladwifikx/recovery.img"
+          if [ ! -s "$IMAGE" ]; then
+            echo "::error::OrangeFox recovery.img 산출물을 찾지 못했습니다."
+            exit 1
+          fi
+          file "$IMAGE"
+          sha256sum "$IMAGE"
+
+      - name: Collect failure diagnostics
+        if: always()
+        working-directory: ${{ env.WS }}
+        run: |
+          {
+            echo '--- dmesg OOM/kill ---'
+            sudo dmesg 2>/dev/null | grep -iE 'out of memory|oom-kill|killed process' | tail -20 || true
+            echo '--- free/df ---'
+            free -h || true
+            df -h / || true
+          } > "${GITHUB_WORKSPACE}/diagnostics.log" 2>&1
+          for f in out/error.log out/soong.log out/verbose.log.gz out/soong/soong.*.extra.variables; do
+            [ -f "$f" ] && cp "$f" "${GITHUB_WORKSPACE}/$(basename "$f")" || true
+          done
+          CCACHE_DIR=/tmp/ccache ccache -s >> "${GITHUB_WORKSPACE}/diagnostics.log" 2>&1 || true
+          tail -40 "${GITHUB_WORKSPACE}/diagnostics.log"
+
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /tmp/ccache
+          key: ccache-orangefox-${{ github.run_id }}
+
+      - name: Upload build outputs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: orangefox-sm-t583
+          if-no-files-found: warn
+          path: |
+            ${{ env.WS }}/out/target/product/gtaxladwifikx/recovery.img
+            orangefox-build.log
+            orangefox-manifest.xml
+            mem-monitor.log
+            diagnostics.log
+            soong.log
+            soong.*.extra.variables
+            verbose.log.gz
+
+      - name: Notify Telegram on build success
         if: success()
         continue-on-error: true
         uses: appleboy/telegram-action@390cf7345777cd821dba28c72f436a78bce19cc5
@@ -12,7 +376,7 @@
             ✨ 빌드가 정상적으로 완료되었습니다.
             딸깍용 장난감에 올릴 준비를 하세요! 🚀
 
-      - name: 🔴 빌드 실패 에러 알림 전송
+      - name: Notify Telegram on build failure
         if: failure()
         continue-on-error: true
         uses: appleboy/telegram-action@390cf7345777cd821dba28c72f436a78bce19cc5
@@ -23,5 +387,4 @@
           message: |
             🚨 *OrangeFox 빌드 실패 (에러 발생)*
 
-            💥 파이프라인 진행 중 에러가 떴습니다.
-            GitHub에서 빌드 로그를 확인해 주세요.
+            빌드 로그와 업로드된 진단 아티팩트를 확인해 주세요.
