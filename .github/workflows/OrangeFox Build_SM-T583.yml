@@ -347,6 +347,11 @@ jobs:
         working-directory: ${{ env.WS }}/out/target/product/gtaxladwifikx
         run: |
           set -euo pipefail
+          cp recovery.img recovery-built.img
+          python3 "${GITHUB_WORKSPACE}/scripts/package_recovery.py" \
+            --stock "${WS}/recovery.img" \
+            --built recovery-built.img \
+            --output recovery.img
           tar -H ustar -cf recovery.tar recovery.img
           mapfile -t tar_entries < <(tar -tf recovery.tar)
           if [ "${#tar_entries[@]}" -ne 1 ] || [ "${tar_entries[0]}" != "recovery.img" ]; then

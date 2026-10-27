@@ -1,0 +1,185 @@
+import argparse
+import gzip
+import hashlib
+import struct
+from pathlib import Path
+
+
+PARTITION_SIZE = 39845888
+TRAILER = b"SEANDROIDENFORCE"
+BUILD_METADATA = {"ramdisk-files.txt", "ramdisk-files.sha256sum"}
+
+
+def parse_image(data):
+    if len(data) < 44 or data[:8] != b"ANDROID!":
+        raise ValueError("input is not an Android boot image")
+    fields = struct.unpack("<9I", data[8:44])
+    kernel_size, kernel_addr, ramdisk_size, ramdisk_addr, second_size, second_addr, tags_addr, page_size, dt_size = fields
+    if page_size < 512 or page_size & (page_size - 1):
+        raise ValueError("invalid Android boot image page size")
+
+    def align(size):
+        return (size + page_size - 1) // page_size * page_size
+
+    kernel_start = page_size
+    ramdisk_start = kernel_start + align(kernel_size)
+    second_start = ramdisk_start + align(ramdisk_size)
+    dt_start = second_start + align(second_size)
+    components = {
+        "kernel": data[kernel_start:kernel_start + kernel_size],
+        "ramdisk": data[ramdisk_start:ramdisk_start + ramdisk_size],
+        "second": data[second_start:second_start + second_size],
+        "dt": data[dt_start:dt_start + dt_size],
+    }
+    expected = (kernel_size, ramdisk_size, second_size, dt_size)
+    actual = tuple(len(components[name]) for name in ("kernel", "ramdisk", "second", "dt"))
+    if actual != expected:
+        raise ValueError("Android boot image component is truncated")
+    return {
+        "header": data[:page_size],
+        "fields": fields,
+        "components": components,
+        "component_end": dt_start + dt_size,
+    }
+
+
+def rewrite_cpio(data):
+    output = bytearray()
+    offset = 0
+    removed = []
+    trailer_found = False
+    while offset + 110 <= len(data):
+        header = data[offset:offset + 110]
+        if header[:6] not in (b"070701", b"070702"):
+            raise ValueError("ramdisk is not a newc CPIO archive")
+        try:
+            file_size = int(header[54:62], 16)
+            name_size = int(header[94:102], 16)
+        except ValueError as exc:
+            raise ValueError("invalid CPIO numeric field") from exc
+
+        name_start = offset + 110
+        name_end = name_start + name_size
+        if name_size < 1 or name_end > len(data) or data[name_end - 1:name_end] != b"\0":
+            raise ValueError("invalid CPIO filename")
+        name_bytes = data[name_start:name_end]
+        name = name_bytes[:-1].decode("utf-8", "replace")
+        normalized_name = name[2:] if name.startswith("./") else name
+        data_start = (name_end + 3) & ~3
+        data_end = data_start + file_size
+        if data_end > len(data):
+            raise ValueError("truncated CPIO entry: " + name)
+
+        if name == "TRAILER!!!":
+            output.extend(header)
+            output.extend(name_bytes)
+            output.extend(b"\0" * (-len(output) % 4))
+            output.extend(data[data_start:data_end])
+            output.extend(b"\0" * (-len(output) % 4))
+            trailer_found = True
+            offset = data_end
+            break
+
+        if normalized_name in BUILD_METADATA:
+            removed.append(normalized_name)
+        else:
+            output.extend(header)
+            output.extend(name_bytes)
+            output.extend(b"\0" * (-len(output) % 4))
+            output.extend(data[data_start:data_end])
+            output.extend(b"\0" * (-len(output) % 4))
+        offset = (data_end + 3) & ~3
+
+    if not trailer_found:
+        raise ValueError("CPIO trailer is missing")
+    if any(data[offset:]):
+        raise ValueError("non-zero data follows the CPIO trailer")
+    output.extend(data[offset:])
+    return bytes(output), removed
+
+
+def compress_ramdisk(blob):
+    if blob.startswith(b"\x1f\x8b"):
+        cpio = gzip.decompress(blob)
+    else:
+        cpio = blob
+    rewritten, removed = rewrite_cpio(cpio)
+    compressed = bytearray(gzip.compress(rewritten, compresslevel=9, mtime=0))
+    if compressed[:4] != b"\x1f\x8b\x08\x00":
+        raise ValueError("unexpected gzip header")
+    compressed[8] = 0
+    compressed[9] = 3
+    if gzip.decompress(compressed) != rewritten:
+        raise ValueError("compressed ramdisk failed round-trip validation")
+    return bytes(compressed), len(rewritten), removed
+
+
+def package(stock_data, built_data):
+    stock = parse_image(stock_data)
+    built = parse_image(built_data)
+    stock_fields = stock["fields"]
+    stock_parts = stock["components"]
+    built_parts = built["components"]
+    kernel = stock_parts["kernel"]
+    dt = stock_parts["dt"]
+    if not kernel or kernel[56:60] != b"ARM\x64":
+        raise ValueError("stock recovery does not contain an Exynos ARM64 Image kernel")
+    if not dt:
+        raise ValueError("stock recovery image has no separate DT component")
+    if not stock_data[stock["component_end"]:].startswith(TRAILER):
+        raise ValueError("stock recovery image is missing the SEANDROIDENFORCE trailer")
+
+    ramdisk, cpio_size, removed = compress_ramdisk(built_parts["ramdisk"])
+    header = bytearray(stock["header"])
+    kernel_addr, ramdisk_addr, second_addr, tags_addr, page_size = (
+        stock_fields[1], stock_fields[3], stock_fields[5], stock_fields[6], stock_fields[7]
+    )
+    struct.pack_into("<9I", header, 8,
+                     len(kernel), kernel_addr, len(ramdisk), ramdisk_addr,
+                     0, second_addr, tags_addr, page_size, len(dt))
+
+    digest = hashlib.sha1()
+    for component in (kernel, ramdisk, b"", dt):
+        digest.update(component)
+        digest.update(struct.pack("<I", len(component)))
+    header[576:596] = digest.digest()
+    header[596:608] = b"\0" * 12
+
+    pad = lambda component: component + b"\0" * (-len(component) % page_size)
+    image = bytes(header) + pad(kernel) + pad(ramdisk) + pad(b"") + pad(dt) + TRAILER
+    if len(image) > PARTITION_SIZE:
+        raise ValueError("packaged image exceeds recovery partition: {} > {}".format(len(image), PARTITION_SIZE))
+
+    parsed = parse_image(image)
+    if parsed["components"]["kernel"] != kernel or parsed["components"]["ramdisk"] != ramdisk:
+        raise ValueError("packaged image component verification failed")
+    if parsed["components"]["dt"] != dt or parsed["fields"][8] != len(dt):
+        raise ValueError("packaged stock DT verification failed")
+    if parsed["header"][576:596] != digest.digest():
+        raise ValueError("Android boot header ID verification failed")
+    if image[parsed["component_end"]:] != TRAILER:
+        raise ValueError("packaged SEANDROIDENFORCE trailer verification failed")
+    if not gzip.decompress(parsed["components"]["ramdisk"]).startswith((b"070701", b"070702")):
+        raise ValueError("packaged ramdisk is not a CPIO archive")
+    return image, len(ramdisk), cpio_size, removed
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Package an SM-T583 recovery with its stock kernel and DT")
+    parser.add_argument("--stock", required=True, type=Path)
+    parser.add_argument("--built", required=True, type=Path)
+    parser.add_argument("--output", required=True, type=Path)
+    args = parser.parse_args()
+
+    image, ramdisk_size, cpio_size, removed = package(args.stock.read_bytes(), args.built.read_bytes())
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_bytes(image)
+    print("Final image bytes:", len(image))
+    print("Ramdisk compressed bytes:", ramdisk_size)
+    print("Ramdisk CPIO bytes:", cpio_size)
+    print("Stock DT bytes:", struct.unpack_from("<I", image, 40)[0])
+    print("Removed non-runtime build metadata:", ", ".join(removed) if removed else "none")
+
+
+if __name__ == "__main__":
+    main()
