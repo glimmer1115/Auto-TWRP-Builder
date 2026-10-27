@@ -273,8 +273,14 @@ jobs:
             cat "${GITHUB_WORKSPACE}/overrides/BoardConfig.mk"
             # Android 16 build/make rejects armv7-a-neon for 32-bit ARM targets.
             printf '\nTARGET_ARCH_VARIANT := armv8-a\n'
+            # 따옴표가 포함된 값이 soong extra.variables에 그대로 기록되어 JSON이 깨졌습니다(실행 40476124388, RecoveryPixelFormat).
+            printf 'TARGET_RECOVERY_PIXEL_FORMAT := ABGR_8888\n'
           } >> BoardConfig.mk
-          grep -n '^TARGET_ARCH_VARIANT' BoardConfig.mk
+          grep -n -e '^TARGET_ARCH_VARIANT' -e '^TARGET_RECOVERY_PIXEL_FORMAT' BoardConfig.mk
+          if [ "$(grep '^TARGET_RECOVERY_PIXEL_FORMAT' BoardConfig.mk | tail -n 1)" != 'TARGET_RECOVERY_PIXEL_FORMAT := ABGR_8888' ]; then
+            echo "::error::TARGET_RECOVERY_PIXEL_FORMAT 최종 값에 따옴표가 남아 있습니다."
+            exit 1
+          fi
 
           cp "${GITHUB_WORKSPACE}/overrides/init.recovery.samsungexynos7870.rc" recovery/root/
           cp "${GITHUB_WORKSPACE}/overrides/init.recovery.usb.rc" recovery/root/
