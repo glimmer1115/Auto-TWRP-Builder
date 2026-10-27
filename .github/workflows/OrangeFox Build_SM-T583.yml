@@ -40,17 +40,6 @@ jobs:
             exit 1
           fi
 
-      - name: Add swap for soong analysis
-        run: |
-          set -euo pipefail
-          sudo swapoff -a || true
-          sudo fallocate -l 10G /mnt/swapfile
-          sudo chmod 600 /mnt/swapfile
-          sudo mkswap /mnt/swapfile
-          sudo swapon /mnt/swapfile
-          free -h
-          df -h /mnt
-
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -136,7 +125,36 @@ jobs:
           set -euo pipefail
           export GIT_ASKPASS="$RUNNER_TEMP/git-askpass.sh"
           export GIT_TERMINAL_PROMPT=0
-          repo sync --jobs=4 --force-sync --no-clone-bundle --no-tags -c --fail-fast
+          # repo는 비TTY에서 진행률을 출력하지 않으므로 디스크 사용량을 주기적으로 남깁니다.
+          ( while true; do sleep 60; echo "sync-heartbeat $(date +%T) used=$(df -Pm / | awk 'NR==2 {print $3}')MB"; done ) &
+          HEARTBEAT=$!
+          trap 'kill "$HEARTBEAT" 2>/dev/null || true' EXIT
+          SYNC_START=$(date +%s)
+          repo sync --jobs-network=16 --jobs-checkout=4 --optimized-fetch --retry-fetches=3 \
+            --force-sync --no-clone-bundle --no-tags -c --fail-fast
+          echo "repo sync 소요: $(( $(date +%s) - SYNC_START ))초, 프로젝트 수: $(repo list | wc -l)"
+          { du -sm .repo; du -sm -- */ | sort -rn | awk 'NR<=15'; } || true
+
+      - name: Size swap for soong analysis
+        run: |
+          set -euo pipefail
+          # 14 GiB RSS 이상으로 커지는 soong_build 분석 단계가 10 GiB 스왑을 소진했던 실행(40446487083)에 대응합니다.
+          sudo swapoff -a || true
+          sudo rm -f /mnt/swapfile
+          avail_gb=$(df -Pk / | awk 'NR==2 {print int($4/1048576)}')
+          swap_gb=$(( avail_gb - 10 ))
+          if [ "$swap_gb" -gt 24 ]; then swap_gb=24; fi
+          if [ "$swap_gb" -lt 8 ]; then
+            echo "::error::여유 디스크 ${avail_gb} GiB로는 스왑 8 GiB와 out 디렉터리 10 GiB를 함께 확보할 수 없습니다."
+            df -h /
+            exit 1
+          fi
+          sudo fallocate -l "${swap_gb}G" /mnt/swapfile
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+          free -h
+          df -h /
 
       - name: Download and validate recovery image
         working-directory: ${{ env.WS }}
@@ -266,6 +284,8 @@ jobs:
           export ALLOW_MISSING_DEPENDENCIES=true
           export FOX_BUILD_DEVICE=gtaxladwifikx
           export LC_ALL=C
+          # soong_build가 16 GiB 러너에서 RSS 14 GiB까지 증가해 스왑이 소진됐으므로 Go GC가 일찍 회수하도록 제한합니다.
+          export GOGC=50 GOMEMLIMIT=10GiB
           # envsetup.sh/lunch/mka reference unset variables (e.g. BUILD_VAR_CACHE_READY), so nounset must stay off.
           set +u
           BUILD_LOG="${GITHUB_WORKSPACE}/orangefox-build.log"
@@ -277,6 +297,8 @@ jobs:
                 echo "::group::monitor $(date +%T)"
                 free -m | sed -n '2,3p'; df -Pm / | tail -1
                 ps -eo pid,etimes,pcpu,pmem,rss,stat,args --sort=-pcpu | head -8 | cut -c1-200
+                SB_PID=$(pgrep -n -f 'bin/soong_build --top' || true)
+                [ -n "$SB_PID" ] && tr '\0' '\n' < "/proc/$SB_PID/environ" 2>/dev/null | grep -E '^GO(GC|MEMLIMIT)=' || true
                 tail -n 3 out/soong.log out/error.log 2>/dev/null || true
                 echo "::endgroup::"
               } | tee -a "${GITHUB_WORKSPACE}/mem-monitor.log"
