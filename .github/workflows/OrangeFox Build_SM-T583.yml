@@ -288,23 +288,36 @@ jobs:
           export GOGC=50 GOMEMLIMIT=10GiB
           # envsetup.sh/lunch/mka reference unset variables (e.g. BUILD_VAR_CACHE_READY), so nounset must stay off.
           set +u
-          BUILD_LOG="${GITHUB_WORKSPACE}/orangefox-build.log"
-          # 라이브 로그에 상태를 남기고, 10분간 빌드 로그가 멈추면 soong_build에 SIGQUIT(Go goroutine dump)를 보냅니다.
+          # 라이브 로그에 상태를 남기고, soong_build의 CPU 시간이 15분간 늘지 않으면 SIGQUIT(Go goroutine dump)를 보냅니다.
           (
+            last_sig=""; last_cpu=""; cpu_since=$(date +%s)
             while true; do
               sleep 60
+              SB_PID=$(pgrep -n -f 'bin/soong_build --top' || true)
+              sig=$(tail -n 3 out/soong.log out/error.log 2>/dev/null | cksum || true)
+              if [ "$sig" = "$last_sig" ]; then
+                logs="soong.log/error.log: 이전 출력과 동일"
+              else
+                logs=$(tail -n 3 out/soong.log out/error.log 2>/dev/null || true)
+                last_sig="$sig"
+              fi
+              genv=""
+              if [ -n "$SB_PID" ]; then
+                genv=$(tr '\0' '\n' < "/proc/$SB_PID/environ" 2>/dev/null | grep -E '^GO(GC|MEMLIMIT)=' | tr '\n' ' ' || true)
+                cpu=$(awk '{print $14+$15}' "/proc/$SB_PID/stat" 2>/dev/null || true)
+                if [ "$cpu" != "$last_cpu" ]; then last_cpu="$cpu"; cpu_since=$(date +%s); fi
+              fi
               {
                 echo "::group::monitor $(date +%T)"
                 free -m | sed -n '2,3p'; df -Pm / | tail -1
                 ps -eo pid,etimes,pcpu,pmem,rss,stat,args --sort=-pcpu | head -8 | cut -c1-200
-                SB_PID=$(pgrep -n -f 'bin/soong_build --top' || true)
-                [ -n "$SB_PID" ] && tr '\0' '\n' < "/proc/$SB_PID/environ" 2>/dev/null | grep -E '^GO(GC|MEMLIMIT)=' || true
-                tail -n 3 out/soong.log out/error.log 2>/dev/null || true
+                if [ -n "$SB_PID" ]; then echo "soong_build env: ${genv:-GOGC/GOMEMLIMIT 없음} cpu_ticks=${last_cpu}"; fi
+                echo "$logs"
                 echo "::endgroup::"
               } | tee -a "${GITHUB_WORKSPACE}/mem-monitor.log"
-              if [ -f "$BUILD_LOG" ] && [ $(( $(date +%s) - $(stat -c %Y "$BUILD_LOG") )) -gt 600 ]; then
-                echo "::warning::빌드 로그가 10분간 멈춰 soong_build 상태를 덤프합니다."
-                pkill -QUIT -f 'soong_build' || true
+              if [ -n "$SB_PID" ] && [ $(( $(date +%s) - cpu_since )) -gt 900 ]; then
+                echo "::warning::soong_build CPU 시간이 15분간 늘지 않아 상태를 덤프합니다."
+                pkill -QUIT -f 'bin/soong_build --top' || true
                 sleep 20
                 pkill -TERM -f 'soong_ui' || true
                 break
