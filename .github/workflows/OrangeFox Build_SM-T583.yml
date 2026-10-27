@@ -20,14 +20,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Download last verified TWRP recovery
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: twrp-gtaxladwifikx
-          run-id: 40253587740
-          github-token: ${{ github.token }}
-          path: /tmp/twrp-input
-
       - name: Reclaim runner disk space
         run: |
           set -euo pipefail
@@ -146,24 +138,24 @@ jobs:
           MIN_OUT_GIB: 32
         run: bash "${GITHUB_WORKSPACE}/scripts/setup_swap.sh"
 
-      - name: Download and validate recovery image
+      - name: Validate known-good stock recovery image
         working-directory: ${{ env.WS }}
         run: |
           set -euo pipefail
-          SOURCE_IMAGE=/tmp/twrp-input/recovery.img
+          SOURCE_IMAGE="${GITHUB_WORKSPACE}/recovery.img"
           if [ ! -s "$SOURCE_IMAGE" ]; then
-            echo "::error::TWRP artifact에서 recovery.img를 찾지 못했습니다."
+            echo "::error::저장소에서 stock recovery.img를 찾지 못했습니다."
             exit 1
           fi
           cp "$SOURCE_IMAGE" recovery.img
           actual_sha256="$(sha256sum recovery.img | cut -d ' ' -f 1)"
-          expected_sha256=bc2202cadc9d7fb556e28badd531b021555c1c1137ae6bc78b04c8bcf0037bc1
+          expected_sha256=2F9D11FE10E12953486290C9A388EBC23A257D71B167930671159387719CB0ED
           if [ "$actual_sha256" != "$expected_sha256" ]; then
-            echo "::error::이미지가 마지막 검증 TWRP 빌드와 일치하지 않습니다. stock 또는 다른 파일은 사용할 수 없습니다."
+            echo "::error::입력 이미지가 검증된 SM-T583 AP stock recovery와 일치하지 않습니다."
             exit 1
           fi
-          if [ "$(stat -c '%s' recovery.img)" != "31246352" ]; then
-            echo "::error::TWRP 이미지 크기가 마지막 검증 산출물과 다릅니다."
+          if [ "$(stat -c '%s' recovery.img)" != "23753248" ]; then
+            echo "::error::stock recovery 이미지 크기가 검증된 AP 추출본과 다릅니다."
             exit 1
           fi
           python3 - <<'PY'
@@ -286,6 +278,7 @@ jobs:
           restore-keys: ccache-orangefox-
 
       - name: Build OrangeFox recovery
+        id: build
         timeout-minutes: 180
         working-directory: ${{ env.WS }}
         run: |
@@ -363,7 +356,7 @@ jobs:
             verbose.log.gz
 
       - name: Notify Telegram on build success
-        if: success()
+        if: always() && steps.build.outcome == 'success'
         continue-on-error: true
         uses: appleboy/telegram-action@390cf7345777cd821dba28c72f436a78bce19cc5
         with:
@@ -377,7 +370,7 @@ jobs:
             딸깍용 장난감에 올릴 준비를 하세요! 🚀
 
       - name: Notify Telegram on build failure
-        if: failure()
+        if: always() && (cancelled() || failure())
         continue-on-error: true
         uses: appleboy/telegram-action@390cf7345777cd821dba28c72f436a78bce19cc5
         with:
