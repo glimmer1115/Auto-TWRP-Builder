@@ -302,6 +302,10 @@ jobs:
           key: ccache-orangefox-${{ github.run_id }}
           restore-keys: ccache-orangefox-
 
+      - name: Prepare recovery-only build diagnostics
+        working-directory: ${{ env.WS }}
+        run: python3 "${GITHUB_WORKSPACE}/scripts/prepare_recovery_build.py" --workspace "${WS}"
+
       - name: Build OrangeFox recovery
         id: build
         timeout-minutes: 180
@@ -332,6 +336,7 @@ jobs:
           grep -n -B1 -A3 'debug.SetGCPercent' "$SB_MAIN"
           source build/envsetup.sh
           lunch twrp_gtaxladwifikx-bp2a-eng
+          export ORANGEFOX_RECOVERY_IMAGE_ONLY=1
           mka recoveryimage -j"$(nproc)" 2>&1 | tee "${GITHUB_WORKSPACE}/orangefox-build.log"
           IMAGE="out/target/product/gtaxladwifikx/recovery.img"
           if [ ! -s "$IMAGE" ]; then
