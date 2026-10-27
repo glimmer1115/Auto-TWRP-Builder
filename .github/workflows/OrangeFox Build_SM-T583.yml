@@ -306,8 +306,6 @@ jobs:
           export ALLOW_MISSING_DEPENDENCIES=true
           export FOX_BUILD_DEVICE=gtaxladwifikx
           export LC_ALL=C
-          # soong_build가 16 GiB 러너에서 RSS 14 GiB까지 증가해 스왑이 소진됐으므로 Go GC가 일찍 회수하도록 제한합니다.
-          export GOGC=50 GOMEMLIMIT=10GiB
           # 컴파일 출력(약 1시간)을 다음 실행에 재사용합니다. 경로가 같아야 캐시가 적중합니다.
           export USE_CCACHE=1 CCACHE_EXEC=/usr/bin/ccache CCACHE_DIR=/tmp/ccache CCACHE_MAXSIZE=6G
           export CCACHE_BASEDIR=/tmp/orangefox CCACHE_NOHASHDIR=true CCACHE_COMPILERCHECK=string:clang-r547379
@@ -315,62 +313,17 @@ jobs:
           ccache -s | head -5 || true
           # envsetup.sh/lunch/mka reference unset variables (e.g. BUILD_VAR_CACHE_READY), so nounset must stay off.
           set +u
-          # 라이브 로그에 상태를 남기고, soong_build의 CPU 시간이 15분간 늘지 않으면 SIGQUIT(Go goroutine dump)를 보냅니다.
-          (
-            last_sig=""; last_cpu=""; json_ok=""; cpu_since=$(date +%s)
-            while true; do
-              sleep 60
-              EXTRA="out/soong/soong.twrp_gtaxladwifikx.extra.variables"
-              # product config가 만든 JSON이 깨졌으면 93%까지 가지 않고 바로 중단합니다.
-              if [ -z "$json_ok" ] && [ -f "$EXTRA" ] && [ $(( $(date +%s) - $(stat -c %Y "$EXTRA") )) -gt 20 ]; then
-                if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$EXTRA" 2>"$RUNNER_TEMP/json.err"; then
-                  json_ok=1; echo "extra.variables JSON 검사 통과"
-                else
-                  echo "::error::extra.variables JSON이 잘못되어 빌드를 즉시 중단합니다: $(tail -n 1 "$RUNNER_TEMP/json.err")"
-                  sed -n '36,44p' "$EXTRA" | cut -c1-200
-                  pkill -TERM -f 'soong_ui' || true
-                  break
-                fi
-              fi
-              SB_PID=$(pgrep -n -f 'bin/soong_build --top' || true)
-              sig=$(tail -n 3 out/soong.log out/error.log 2>/dev/null | cksum || true)
-              if [ "$sig" = "$last_sig" ]; then
-                logs="soong.log/error.log: 이전 출력과 동일"
-              else
-                logs=$(tail -n 3 out/soong.log out/error.log 2>/dev/null || true)
-                last_sig="$sig"
-              fi
-              genv=""
-              if [ -n "$SB_PID" ]; then
-                genv=$(tr '\0' '\n' < "/proc/$SB_PID/environ" 2>/dev/null | grep -E '^GO(GC|MEMLIMIT)=' | tr '\n' ' ' || true)
-                cpu=$(awk '{print $14+$15}' "/proc/$SB_PID/stat" 2>/dev/null || true)
-                if [ "$cpu" != "$last_cpu" ]; then last_cpu="$cpu"; cpu_since=$(date +%s); fi
-              fi
-              {
-                echo "::group::monitor $(date +%T)"
-                free -m | sed -n '2,3p'; df -Pm / | tail -1
-                ps -eo pid,etimes,pcpu,pmem,rss,stat,args --sort=-pcpu | head -8 | cut -c1-200
-                if [ -n "$SB_PID" ]; then echo "soong_build env: ${genv:-GOGC/GOMEMLIMIT 없음} cpu_ticks=${last_cpu}"; fi
-                echo "$logs"
-                echo "::endgroup::"
-              } | tee -a "${GITHUB_WORKSPACE}/mem-monitor.log"
-              if [ "$(df -Pm / | awk 'NR==2 {print $4}')" -lt 1500 ]; then
-                echo "::error::디스크 여유가 1.5 GiB 미만이라 빌드를 중단하고 중간 산출물을 지웁니다. Runner.Worker 보호 목적입니다."
-                pkill -TERM -f 'soong_ui' || true
-                sleep 10
-                rm -rf out/soong/.intermediates out/target/product/*/obj
-                df -h /
-                break
-              fi
-              if [ -n "$SB_PID" ] && [ $(( $(date +%s) - cpu_since )) -gt 900 ]; then
-                echo "::warning::soong_build CPU 시간이 15분간 늘지 않아 상태를 덤프합니다."
-                pkill -QUIT -f 'bin/soong_build --top' || true
-                sleep 20
-                pkill -TERM -f 'soong_ui' || true
-                break
-              fi
-            done
-          ) &
+          # soong_ui가 soong_build를 `env -i`로 실행해 GOGC/GOMEMLIMIT 환경변수가 전달되지 않으므로(실행 40476124388 로그) 소스에 직접 넣습니다.
+          SB_MAIN=build/soong/cmd/soong_build/main.go
+          if ! grep -q 'debug.SetMemoryLimit' "$SB_MAIN"; then
+            grep -q '"runtime/debug"' "$SB_MAIN" || sed -i '0,/^import (/s//import (\n\t"runtime\/debug"/' "$SB_MAIN"
+            sed -i '0,/^func main() {/s//func main() {\n\tdebug.SetGCPercent(50)\n\tdebug.SetMemoryLimit(10 << 30)/' "$SB_MAIN"
+          fi
+          if ! grep -q 'debug.SetMemoryLimit(10 << 30)' "$SB_MAIN" || ! grep -q '"runtime/debug"' "$SB_MAIN"; then
+            echo "::error::soong_build 메모리 제한 패치를 적용하지 못했습니다."
+            exit 1
+          fi
+          grep -n -B1 -A3 'debug.SetGCPercent' "$SB_MAIN"
           source build/envsetup.sh
           lunch twrp_gtaxladwifikx-bp2a-eng
           mka recoveryimage -j"$(nproc)" 2>&1 | tee "${GITHUB_WORKSPACE}/orangefox-build.log"
@@ -418,7 +371,6 @@ jobs:
             orangefox-manifest.xml
             mem-monitor.log
             diagnostics.log
-            error.log
             soong.log
             soong.*.extra.variables
             verbose.log.gz
