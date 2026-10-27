@@ -275,6 +275,11 @@ jobs:
             # 따옴표가 포함된 값이 soong extra.variables에 그대로 기록되어 JSON이 깨졌습니다(실행 40476124388, RecoveryPixelFormat).
             printf 'TARGET_RECOVERY_PIXEL_FORMAT := ABGR_8888\n'
           } >> BoardConfig.mk
+          sed -i '/^[[:space:]]*TARGET_USES_64_BIT_BINDER[[:space:]]*:?=/d' BoardConfig.mk
+          if grep -Eq '^[[:space:]]*TARGET_USES_64_BIT_BINDER[[:space:]]*:?=' BoardConfig.mk; then
+            echo "::error::Deprecated TARGET_USES_64_BIT_BINDER remains in BoardConfig.mk."
+            exit 1
+          fi
           grep -n -e '^TARGET_ARCH_VARIANT' -e '^TARGET_RECOVERY_PIXEL_FORMAT' BoardConfig.mk
           if [ "$(grep '^TARGET_RECOVERY_PIXEL_FORMAT' BoardConfig.mk | tail -n 1)" != 'TARGET_RECOVERY_PIXEL_FORMAT := ABGR_8888' ]; then
             echo "::error::TARGET_RECOVERY_PIXEL_FORMAT 최종 값에 따옴표가 남아 있습니다."
@@ -337,13 +342,24 @@ jobs:
           sha256sum "$IMAGE"
 
       - name: Package OrangeFox recovery tar
+        id: package
         if: steps.build.outcome == 'success'
         working-directory: ${{ env.WS }}/out/target/product/gtaxladwifikx
         run: |
           set -euo pipefail
-          tar -H ustar -cf "${GITHUB_WORKSPACE}/recovery.tar" recovery.img
-          tar -tf "${GITHUB_WORKSPACE}/recovery.tar" | grep -Fxq recovery.img
-          sha256sum "${GITHUB_WORKSPACE}/recovery.tar"
+          tar -H ustar -cf recovery.tar recovery.img
+          mapfile -t tar_entries < <(tar -tf recovery.tar)
+          if [ "${#tar_entries[@]}" -ne 1 ] || [ "${tar_entries[0]}" != "recovery.img" ]; then
+            echo "::error::recovery.tar must contain only recovery.img."
+            exit 1
+          fi
+          image_sha256=$(sha256sum recovery.img | cut -d ' ' -f 1)
+          tar_image_sha256=$(tar -xOf recovery.tar recovery.img | sha256sum | cut -d ' ' -f 1)
+          if [ "$image_sha256" != "$tar_image_sha256" ]; then
+            echo "::error::recovery.tar payload differs from recovery.img."
+            exit 1
+          fi
+          sha256sum recovery.img recovery.tar
 
       - name: Collect failure diagnostics
         if: always()
@@ -370,14 +386,22 @@ jobs:
           key: ccache-orangefox-${{ github.run_id }}
 
       - name: Upload build outputs
-        if: always()
+        if: steps.package.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
           name: orangefox-sm-t583
-          if-no-files-found: warn
+          if-no-files-found: error
           path: |
             ${{ env.WS }}/out/target/product/gtaxladwifikx/recovery.img
-            recovery.tar
+            ${{ env.WS }}/out/target/product/gtaxladwifikx/recovery.tar
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: orangefox-sm-t583-diagnostics
+          if-no-files-found: warn
+          path: |
             orangefox-build.log
             orangefox-manifest.xml
             mem-monitor.log
