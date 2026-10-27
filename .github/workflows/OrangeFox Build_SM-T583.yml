@@ -268,3 +268,28 @@ jobs:
           path: |
             ${{ env.WS }}/out/target/product/gtaxladwifikx/recovery.img
             orangefox-build.log
+       - name: 🟢 빌드 성공 알림 전송
+         if: success()
+         uses: appleboy/telegram-action@master
+         with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            🎉 *OrangeFox 리커버리 빌드 성공!*
+            
+            ✨ 빌드가 정상적으로 완료되었습니다. 
+            딸깍용 장난감에 올릴 준비를 하세요! 🚀
+
+      - name: 🔴 빌드 실패 에러 알림 전송
+        if: failure()
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            🚨 *OrangeFox 빌드 실패 (에러 발생)*
+            
+            💥 파이프라인 진행 중 에러가 떴습니다.
+            GitHub에 접속해서 빌드 로그를 확인해 보세요! 🛠️
