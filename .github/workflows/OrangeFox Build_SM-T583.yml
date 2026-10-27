@@ -132,6 +132,26 @@ jobs:
           rm -rf .repo/projects .repo/project-objects cts prebuilts/abi-dumps
           df -h /
 
+      - name: Keep recovery UI English-only
+        working-directory: ${{ env.WS }}/bootable/recovery
+        run: |
+          set -euo pipefail
+          LANGUAGE_DIR=gui/theme/common/languages
+          if [ ! -f "$LANGUAGE_DIR/en.xml" ]; then
+            echo "::error::OrangeFox English language resource is missing."
+            exit 1
+          fi
+          find "$LANGUAGE_DIR" -maxdepth 1 -type f -name '*.xml' ! -name en.xml -delete
+          rm -f gui/theme/common/fonts/Chococooky.ttf
+          if find "$LANGUAGE_DIR" -maxdepth 1 -type f -name '*.xml' ! -name en.xml -print -quit | grep -q .; then
+            echo "::error::Non-English language resources remain in the recovery theme."
+            exit 1
+          fi
+          if [ -e gui/theme/common/fonts/Chococooky.ttf ]; then
+            echo "::error::Korean display font was not removed from the recovery theme."
+            exit 1
+          fi
+
       - name: Configure 16 GiB swap for Soong
         env:
           SWAP_GIB: 16
