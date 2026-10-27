@@ -149,7 +149,7 @@ jobs:
           fi
           cp "$SOURCE_IMAGE" recovery.img
           actual_sha256="$(sha256sum recovery.img | cut -d ' ' -f 1)"
-          expected_sha256=2F9D11FE10E12953486290C9A388EBC23A257D71B167930671159387719CB0ED
+          expected_sha256=2f9d11fe10e12953486290c9a388ebc23a257d71b167930671159387719cb0ed
           if [ "$actual_sha256" != "$expected_sha256" ]; then
             echo "::error::입력 이미지가 검증된 SM-T583 AP stock recovery와 일치하지 않습니다."
             exit 1
