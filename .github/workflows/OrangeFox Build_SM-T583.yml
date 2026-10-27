@@ -135,18 +135,20 @@ jobs:
           echo "repo sync 소요: $(( $(date +%s) - SYNC_START ))초, 프로젝트 수: $(repo list | wc -l)"
           { du -sm .repo; du -sm -- */ | sort -rn | awk 'NR<=15'; echo '--- prebuilts 하위 ---'; du -sm -- prebuilts/*/ | sort -rn | awk 'NR<=20'; } || true
           cp /tmp/orangefox-manifest.xml "${GITHUB_WORKSPACE}/orangefox-manifest.xml"
+          # 실행 40456463445에서 out 디렉터리가 남은 10 GiB를 초과해 디스크가 100%가 되어 Runner.Worker가 종료됐습니다.
+          rm -rf .repo/projects .repo/project-objects cts prebuilts/abi-dumps
+          df -h /
 
       - name: Size swap for soong analysis
         run: |
           set -euo pipefail
-          # 14 GiB RSS 이상으로 커지는 soong_build 분석 단계가 10 GiB 스왑을 소진했던 실행(40446487083)에 대응합니다.
+          # soong_build 분석 단계에서 스왑 사용량 최대 11.8 GiB가 관측되어(실행 40452716751) 12 GiB로 고정합니다.
           sudo swapoff -a || true
           sudo rm -f /mnt/swapfile
           avail_gb=$(df -Pk / | awk 'NR==2 {print int($4/1048576)}')
-          swap_gb=$(( avail_gb - 10 ))
-          if [ "$swap_gb" -gt 24 ]; then swap_gb=24; fi
-          if [ "$swap_gb" -lt 8 ]; then
-            echo "::error::여유 디스크 ${avail_gb} GiB로는 스왑 8 GiB와 out 디렉터리 10 GiB를 함께 확보할 수 없습니다."
+          swap_gb=12
+          if [ $(( avail_gb - swap_gb )) -lt 20 ]; then
+            echo "::error::여유 디스크 ${avail_gb} GiB로는 스왑 ${swap_gb} GiB와 out 디렉터리 20 GiB를 함께 확보할 수 없습니다."
             df -h /
             exit 1
           fi
@@ -316,6 +318,14 @@ jobs:
                 echo "$logs"
                 echo "::endgroup::"
               } | tee -a "${GITHUB_WORKSPACE}/mem-monitor.log"
+              if [ "$(df -Pm / | awk 'NR==2 {print $4}')" -lt 1500 ]; then
+                echo "::error::디스크 여유가 1.5 GiB 미만이라 빌드를 중단하고 중간 산출물을 지웁니다. Runner.Worker 보호 목적입니다."
+                pkill -TERM -f 'soong_ui' || true
+                sleep 10
+                rm -rf out/soong/.intermediates out/target/product/*/obj
+                df -h /
+                break
+              fi
               if [ -n "$SB_PID" ] && [ $(( $(date +%s) - cpu_since )) -gt 900 ]; then
                 echo "::warning::soong_build CPU 시간이 15분간 늘지 않아 상태를 덤프합니다."
                 pkill -QUIT -f 'bin/soong_build --top' || true
