@@ -275,7 +275,7 @@ jobs:
             # 따옴표가 포함된 값이 soong extra.variables에 그대로 기록되어 JSON이 깨졌습니다(실행 40476124388, RecoveryPixelFormat).
             printf 'TARGET_RECOVERY_PIXEL_FORMAT := ABGR_8888\n'
           } >> BoardConfig.mk
-          sed -i '/^[[:space:]]*TARGET_USES_64_BIT_BINDER[[:space:]]*:?=/d' BoardConfig.mk
+          sed -E -i '/^[[:space:]]*TARGET_USES_64_BIT_BINDER[[:space:]]*:?=/d' BoardConfig.mk
           if grep -Eq '^[[:space:]]*TARGET_USES_64_BIT_BINDER[[:space:]]*:?=' BoardConfig.mk; then
             echo "::error::Deprecated TARGET_USES_64_BIT_BINDER remains in BoardConfig.mk."
             exit 1
