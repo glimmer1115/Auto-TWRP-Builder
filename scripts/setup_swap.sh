@@ -35,9 +35,10 @@ sudo mkswap "$SWAP_FILE"
 sudo swapon "$SWAP_FILE"
 
 expected_bytes=$((SWAP_GIB * 1024 * 1024 * 1024))
+minimum_active_bytes=$((expected_bytes - 1024 * 1024))
 active_bytes=$(sudo swapon --noheadings --raw --bytes --show=NAME,SIZE \
   | awk -v file="$SWAP_FILE" '$1 == file {print $2; exit}')
-if [[ -z "$active_bytes" ]] || (( active_bytes < expected_bytes )); then
+if [[ -z "$active_bytes" ]] || (( active_bytes < minimum_active_bytes )); then
   echo "::error::요청한 크기의 스왑이 활성화되지 않았습니다: ${SWAP_FILE}"
   sudo swapon --show
   exit 1
