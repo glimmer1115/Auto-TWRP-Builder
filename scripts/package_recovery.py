@@ -94,7 +94,6 @@ def rewrite_cpio(data):
         raise ValueError("CPIO trailer is missing")
     if any(data[offset:]):
         raise ValueError("non-zero data follows the CPIO trailer")
-    output.extend(data[offset:])
     return bytes(output), removed
 
 
@@ -126,8 +125,12 @@ def package(stock_data, built_data):
         raise ValueError("stock recovery does not contain an Exynos ARM64 Image kernel")
     if not dt:
         raise ValueError("stock recovery image has no separate DT component")
-    if not stock_data[stock["component_end"]:].startswith(TRAILER):
+    stock_suffix = stock_data[stock["component_end"]:]
+    if not stock_suffix.startswith(TRAILER):
         raise ValueError("stock recovery image is missing the SEANDROIDENFORCE trailer")
+    stock_footer = stock_suffix[len(TRAILER):]
+    if stock_footer and not stock_footer.startswith(b"SignerVer02"):
+        raise ValueError("stock recovery image has an unknown footer after SEANDROIDENFORCE")
 
     ramdisk, cpio_size, removed = compress_ramdisk(built_parts["ramdisk"])
     header = bytearray(stock["header"])
@@ -171,10 +174,14 @@ def main():
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
 
-    image, ramdisk_size, cpio_size, removed = package(args.stock.read_bytes(), args.built.read_bytes())
+    stock_data = args.stock.read_bytes()
+    stock_image = parse_image(stock_data)
+    stock_footer_size = max(0, len(stock_data) - stock_image["component_end"] - len(TRAILER))
+    image, ramdisk_size, cpio_size, removed = package(stock_data, args.built.read_bytes())
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_bytes(image)
     print("Final image bytes:", len(image))
+    print("Stock SignerVer02 footer excluded bytes:", stock_footer_size)
     print("Ramdisk compressed bytes:", ramdisk_size)
     print("Ramdisk CPIO bytes:", cpio_size)
     print("Stock DT bytes:", struct.unpack_from("<I", image, 40)[0])

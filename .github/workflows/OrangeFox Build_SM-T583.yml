@@ -395,15 +395,13 @@ jobs:
           path: /tmp/ccache
           key: ccache-orangefox-${{ github.run_id }}
 
-      - name: Upload build outputs
+      - name: Upload recovery tar
         if: steps.package.outcome == 'success'
         uses: actions/upload-artifact@v7
         with:
           name: orangefox-sm-t583
           if-no-files-found: error
-          path: |
-            ${{ env.WS }}/out/target/product/gtaxladwifikx/recovery.img
-            ${{ env.WS }}/out/target/product/gtaxladwifikx/recovery.tar
+          path: ${{ env.WS }}/out/target/product/gtaxladwifikx/recovery.tar
 
       - name: Upload build diagnostics
         if: always()
