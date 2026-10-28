@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
-"""Physically slim a recovery image before package_recovery.py repackages it.
+"""
+slim_recovery.py (V18) — Strict physical slimming of recovery.img
 
-This script preserves the input image and writes an intermediate image whose
-boot-header SHA-1 is intentionally stale. Only pass that output to
-package_recovery.py; never flash it directly.
+⚠️ 이 스크립트가 보장하는 것:
+  - Fail-Closed ELF 검사: readelf 부재/실패 또는 의존성 검사 실패 시 ICU 제거 취소
+  - 제한된 STRIP_TARGETS만 strip 수행 (llvm-strip 등 안전한 도구 사용)
+  - CPIO 070701 매직 준수, trailer 보존 및 4바이트/512바이트 정렬
+  - 정규 파일(S_IFREG)만 strip 및 삭제 대상으로 삼음 (하드링크/심볼릭 링크 보호)
+
+⚠️ 이 스크립트가 보장하지 않는 것:
+  - strip 후 실제 Android 런타임 실행 가능성 (readelf 구조 검사는 런타임 보장 아님)
+  - dlopen() 동적 로딩 의존성
+  - 출력물(recovery-slim.img)의 부트 헤더 SHA-1은 미갱신됨.
+    반드시 package_recovery.py의 --built 입력으로만 사용하고 직접 플래시 금지.
 """
 import argparse
 import gzip
@@ -12,13 +21,11 @@ import os
 import re
 import shutil
 import stat
-import struct
 import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
-
 
 _here = Path(__file__).resolve().parent
 _pr_path = _here / "package_recovery.py"
@@ -27,256 +34,182 @@ pr = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(pr)
 
 REMOVE_PATHS = {
-    "system/bin/update_engine_sideload",
-    "system/bin/adbd",
-    "system/lib/libadbd_services.so",
-    "system/bin/bash",
-    "system/bin/nano",
-    "system/bin/toolbox",
-    "sbin/bash",
+    "system/bin/update_engine_sideload", "system/bin/adbd",
+    "system/lib/libadbd_services.so", "system/bin/bash",
+    "system/bin/nano", "system/bin/toolbox", "sbin/bash",
 }
 REMOVE_PREFIXES = ("system/etc/terminfo/", "system/etc/nano/")
 KEEP_FONTS = {"roboto-regular.ttf", "roboto-medium.ttf"}
-ICU_LIBS = {
-    "system/lib/libicuuc.so",
-    "system/lib/libicui18n.so",
-    "system/lib/libicudata.so",
-}
+ICU_LIBS = {"system/lib/libicuuc.so", "system/lib/libicui18n.so", "system/lib/libicudata.so"}
+
+# 🔥 Strip을 적용할 대상 경로 제한
 STRIP_TARGETS = {
-    "system/bin/recovery",
-    "system/bin/init",
-    "system/bin/linker",
+    "system/bin/recovery", "system/bin/init", "system/bin/linker",
     "sbin/magiskboot",
 }
 
-
 def is_theme_xml(path):
-    return path.endswith(".xml") and (
-        path.startswith("twres/themes/") or path.startswith("twres/resources/")
-    )
-
+    return path.endswith(".xml") and (path.startswith("twres/themes/") or path.startswith("twres/resources/"))
 
 def should_remove(path, mode, link_count, remove_icu, referenced_fonts):
-    if path == "TRAILER!!!" or link_count > 1:
-        return False
-
-    file_type = stat.S_IFMT(mode)
-    if path in REMOVE_PATHS or any(path.startswith(prefix) for prefix in REMOVE_PREFIXES):
-        return file_type == stat.S_IFREG
-
-    if remove_icu and path in ICU_LIBS:
-        return file_type == stat.S_IFREG
-
+    if path == "TRAILER!!!" or link_count > 1: return False
+    ftype = stat.S_IFMT(mode)
+    if path in REMOVE_PATHS: return ftype == stat.S_IFREG
+    for p in REMOVE_PREFIXES:
+        if path.startswith(p): return ftype == stat.S_IFREG
+    if remove_icu and path in ICU_LIBS: return ftype == stat.S_IFREG
     if path.startswith("twres/fonts/"):
-        if file_type != stat.S_IFREG or not path.endswith(".ttf"):
-            return False
+        if ftype != stat.S_IFREG or not path.endswith(".ttf"): return False
         basename = path.rsplit("/", 1)[-1].lower()
-        if referenced_fonts is None or basename in referenced_fonts:
-            return False
+        if referenced_fonts is None: return False
+        if basename in referenced_fonts: return False
         return basename not in KEEP_FONTS
-
     return False
 
+def find_safe_strip_tool():
+    """ARM 아키텍처를 안전하게 처리할 수 있는 크로스 컴파일 strip 도구를 찾습니다."""
+    if shutil.which("llvm-strip"): return "llvm-strip"
+    if shutil.which("arm-linux-gnueabi-strip"): return "arm-linux-gnueabi-strip"
+    return None
 
-def is_elf(data):
-    return data[:4] == b"\x7fELF"
-
-
-def run_tool(command):
-    if not shutil.which(command[0]):
-        return None
+def run_tool(cmd):
+    """외부 도구 실행 래퍼. 도구 부재/실패 시 None 반환 (Fail-Closed)"""
+    if not shutil.which(cmd[0]): return None
     try:
-        result = subprocess.run(command, capture_output=True, text=True)
-        return result.stdout if result.returncode == 0 else None
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        return res.stdout if res.returncode == 0 else None
     except Exception:
         return None
 
-
-def is_valid_elf(data):
-    """Check that readelf can parse the ELF header and dynamic section."""
-    with tempfile.NamedTemporaryFile(delete=False) as temporary:
-        temporary.write(data)
-        temporary_path = temporary.name
+def is_valid_elf_structure(data):
+    """readelf 구조 검사. 실패 시 False 반환 (Fail-Closed)"""
+    if not shutil.which("readelf"): return False
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        tmp.write(data)
+        tmp_path = tmp.name
     try:
-        if run_tool(["readelf", "-h", temporary_path]) is None:
-            return False
-        return run_tool(["readelf", "-dW", temporary_path]) is not None
+        return run_tool(["readelf", "-h", tmp_path]) is not None and run_tool(["readelf", "-dW", tmp_path]) is not None
     finally:
-        if os.path.exists(temporary_path):
-            os.remove(temporary_path)
-
-
-def strip_elf(data):
-    """Strip unneeded symbols, retaining the original unless checks pass."""
-    with tempfile.NamedTemporaryFile(delete=False) as temporary:
-        temporary.write(data)
-        temporary_path = temporary.name
-    try:
-        if not shutil.which("strip"):
-            print("WARNING: strip tool unavailable; keeping original ELF.")
-            return data
-        result = subprocess.run(
-            ["strip", "--strip-unneeded", temporary_path], capture_output=True
-        )
-        if result.returncode != 0:
-            print(f"WARNING: strip failed ({result.returncode}); keeping original ELF.")
-            return data
-        with open(temporary_path, "rb") as stripped_file:
-            stripped = stripped_file.read()
-        if not is_valid_elf(stripped):
-            print("WARNING: stripped ELF structure check failed; keeping original.")
-            return data
-        return stripped
-    except Exception as exc:
-        print(f"WARNING: strip exception: {exc}; keeping original ELF.")
-        return data
-    finally:
-        if os.path.exists(temporary_path):
-            os.remove(temporary_path)
-
+        if os.path.exists(tmp_path): os.remove(tmp_path)
 
 def get_needed(elf_data):
-    """Return DT_NEEDED names, or None when readelf cannot inspect the ELF."""
-    with tempfile.NamedTemporaryFile(delete=False) as temporary:
-        temporary.write(elf_data)
-        temporary_path = temporary.name
+    """동적 DT_NEEDED 목록 추출. 도구 실패 시 None 반환 (Fail-Closed)"""
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        tmp.write(elf_data)
+        tmp_path = tmp.name
     try:
-        output = run_tool(["readelf", "-dW", temporary_path])
-        if output is None:
-            return None
-        return [
-            match.group(1)
-            for line in output.splitlines()
-            if "NEEDED" in line
-            for match in [re.search(r"\[(.*?)\]", line)]
-            if match
-        ]
+        out = run_tool(["readelf", "-dW", tmp_path])
+        if out is None: return None
+        return [m.group(1) for ln in out.splitlines() if "NEEDED" in ln for m in [re.search(r"\[(.*?)\]", ln)] if m]
     finally:
-        if os.path.exists(temporary_path):
-            os.remove(temporary_path)
+        if os.path.exists(tmp_path): os.remove(tmp_path)
 
+def strip_elf_data(data, strip_tool):
+    if data[:4] != b"\x7fELF" or not strip_tool: return data
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        tmp.write(data)
+        tmp_path = tmp.name
+    try:
+        res = subprocess.run([strip_tool, "--strip-unneeded", tmp_path], capture_output=True)
+        if res.returncode == 0:
+            with open(tmp_path, "rb") as f: new_data = f.read()
+            if is_valid_elf_structure(new_data): return new_data
+            print(f"WARNING: strip 후 ELF 구조 손상됨 (Fail-Closed). 원본 유지.")
+        else:
+            print(f"WARNING: strip 실패 (code {res.returncode}). 원본 유지.")
+    except Exception as exc:
+        print(f"WARNING: strip 예외: {exc}. 원본 유지.")
+    finally:
+        if os.path.exists(tmp_path): os.remove(tmp_path)
+    return data
 
 def find_referenced_fonts(cpio, xml_paths):
-    if not xml_paths:
-        print("WARNING: no theme XML files found; canceling all font removal.")
-        return None
-
-    references = set()
-    for _, normalized_name, _, _, entry_data, _, _, _ in pr.iter_cpio_entries(cpio):
-        if normalized_name not in xml_paths:
-            continue
-        text = entry_data.decode("utf-8", "ignore")
+    if not xml_paths: return None
+    refs = set()
+    for _, norm_name, _, _, entry_data, _, _, _ in pr.iter_cpio_entries(cpio):
+        if norm_name not in xml_paths: continue
         try:
-            root = ET.fromstring(text)
-        except ET.ParseError:
-            print(f"WARNING: XML parse failed at {normalized_name}; keeping all fonts.")
-            return None
-        for element in root.iter():
-            values = list(element.attrib.values())
-            if element.text:
-                values.append(element.text)
-            if element.tail:
-                values.append(element.tail)
-            for value in values:
-                if isinstance(value, str):
-                    references.update(
-                        match.group(1).lower()
-                        for match in re.finditer(
-                            r"([A-Za-z0-9_.-]+\.ttf)", value, re.IGNORECASE
-                        )
-                    )
-    return references
-
+            root = ET.fromstring(entry_data.decode("utf-8", "ignore"))
+            for elem in root.iter():
+                vals = list(elem.attrib.values()) + ([elem.text] if elem.text else []) + ([elem.tail] if elem.tail else [])
+                for v in vals:
+                    if isinstance(v, str):
+                        for m in re.finditer(r"([A-Za-z0-9_\-\.]+\.ttf)", v, re.IGNORECASE): refs.add(m.group(1).lower())
+        except ET.ParseError: return None
+    return refs
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--input", required=True, type=Path)
-    parser.add_argument("--output", required=True, type=Path)
-    args = parser.parse_args()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--input", required=True, type=Path)
+    ap.add_argument("--output", required=True, type=Path)
+    args = ap.parse_args()
 
-    if args.input.resolve() == args.output.resolve():
-        sys.exit("ERROR: --input and --output resolve to the same path.")
-    if args.output.exists() and os.path.samefile(args.input, args.output):
-        sys.exit("ERROR: --output and --input refer to the same file.")
+    if args.input.resolve() == args.output.resolve(): sys.exit("오류: 입출력 경로 동일")
+    if args.output.exists() and os.path.samefile(args.input, args.output): sys.exit("오류: 입출력 파일 동일")
 
     data = args.input.read_bytes()
     parsed = pr.parse_image(data)
     ramdisk = parsed["components"]["ramdisk"]
     cpio = gzip.decompress(ramdisk) if ramdisk.startswith(b"\x1f\x8b") else ramdisk
 
-    inventory = []
-    pr.rewrite_cpio(cpio, inventory=inventory)
-    xml_paths = {
-        entry["path"]
-        for entry in inventory
-        if entry["type"] == "file" and is_theme_xml(entry["path"])
-    }
-
-    icu_dependency_found = False
-    dependency_check_failed = False
-    failed_file = None
-    elf_count = 0
-    for _, normalized_name, _, _, entry_data, _, _, _ in pr.iter_cpio_entries(cpio):
-        if not is_elf(entry_data):
-            continue
-        elf_count += 1
-        needed = get_needed(entry_data)
-        if needed is None:
-            dependency_check_failed = True
-            failed_file = normalized_name
-            break
-        if any("libicu" in library for library in needed):
-            icu_dependency_found = True
-            break
-
+    inv = []
+    pr.rewrite_cpio(cpio, inventory=inv)
+    xml_paths = {e["path"] for e in inv if e["type"] == "file" and is_theme_xml(e["path"])}
     referenced_fonts = find_referenced_fonts(cpio, xml_paths)
-    if referenced_fonts is not None:
-        print(f"Referenced fonts: {sorted(referenced_fonts)}")
-    print(f"ELF dependency scan: checked {elf_count} ELFs (may stop early).")
 
-    if dependency_check_failed:
-        print(f"WARNING: readelf check failed at {failed_file}; skipping ICU removal.")
+    # 🔥 [Fail-Closed 복구] 1차 패스: 모든 ELF 의존성 전수 조사
+    icu_in_needed, check_failed, failed_file, elfs_checked = False, False, None, 0
+    for _, norm_name, _, _, entry_data, _, _, _ in pr.iter_cpio_entries(cpio):
+        if entry_data[:4] == b"\x7fELF":
+            elfs_checked += 1
+            needed = get_needed(entry_data)
+            if needed is None:
+                check_failed, failed_file = True, norm_name
+                break
+            if any("libicu" in n for n in needed):
+                icu_in_needed = True
+                break
+
+    print(f"ELF 의존성 검사: {elfs_checked}개 진행")
+    if check_failed:
+        print(f"WARNING: ELF 검사 실패 위치: {failed_file}. Fail-Closed에 의해 ICU 제거를 취소합니다.")
         remove_icu = False
-    elif icu_dependency_found:
-        print("WARNING: libicu is required by DT_NEEDED; skipping ICU removal.")
+    elif icu_in_needed:
+        print("WARNING: libicu가 NEEDED에 존재합니다. ICU 제거를 취소합니다.")
         remove_icu = False
     else:
-        print("ICU static dependency check passed; proceeding with listed ICU removal.")
+        print("ICU 정적 의존성 검사 통과. ICU 제거를 진행합니다.")
         remove_icu = True
 
+    strip_tool = find_safe_strip_tool()
+    print(f"선택된 strip 도구: {strip_tool or '없음 (스킵)'}")
+
     output = bytearray()
-    removed_count = 0
-    stripped_count = 0
-    skipped_symlinks = []
-    for _, normalized_name, header, name_bytes, entry_data, mode, link_count, _ in pr.iter_cpio_entries(cpio):
+    removed_count, stripped_count = 0, 0
+
+    for (raw_name, norm_name, header, name_bytes, entry_data, mode, link_count, file_size) in pr.iter_cpio_entries(cpio):
         if header[:6] != b"070701":
-            sys.exit(f"Unsupported CPIO magic: {header[:6]!r}; only 070701 is accepted.")
+            sys.exit(f"Error: Unsupported CPIO magic {header[:6]}. Only 070701 is safe.")
 
-        file_type = stat.S_IFMT(mode)
-        if file_type == stat.S_IFLNK and (
-            normalized_name in REMOVE_PATHS
-            or any(normalized_name.startswith(prefix) for prefix in REMOVE_PREFIXES)
-        ):
-            skipped_symlinks.append(normalized_name)
-
-        if should_remove(
-            normalized_name, mode, link_count, remove_icu, referenced_fonts
-        ):
+        if should_remove(norm_name, mode, link_count, remove_icu, referenced_fonts):
             removed_count += 1
             continue
 
-        if (
-            normalized_name in STRIP_TARGETS
-            and file_type == stat.S_IFREG
-            and link_count == 1
-            and is_elf(entry_data)
-        ):
-            stripped = strip_elf(entry_data)
-            if len(stripped) < len(entry_data):
+        if raw_name == "TRAILER!!!":
+            output.extend(header)
+            output.extend(name_bytes)
+            output.extend(b"\0" * (-len(output) % 4))
+            output.extend(entry_data)
+            output.extend(b"\0" * (-len(output) % 4))
+            break
+
+        if norm_name in STRIP_TARGETS and stat.S_IFMT(mode) == stat.S_IFREG and link_count == 1:
+            new_data = strip_elf_data(entry_data, strip_tool)
+            if len(new_data) < len(entry_data):
                 stripped_count += 1
                 header = bytearray(header)
-                header[54:62] = f"{len(stripped):08x}".encode("ascii")
-                entry_data = stripped
+                header[54:62] = f"{len(new_data):08x}".encode('ascii')
+                entry_data = new_data
 
         output.extend(header)
         output.extend(name_bytes)
@@ -286,29 +219,22 @@ def main():
 
     output.extend(b"\0" * (-len(output) % pr.CPIO_BLOCK_SIZE))
     new_ramdisk = pr.compress_cpio(bytes(output))
-    print(f"Removed: {removed_count} entries; stripped: {stripped_count} ELF files.")
-    if skipped_symlinks:
-        print(f"Preserved symlinks for review: {skipped_symlinks}")
-    print(f"New ramdisk size: {len(new_ramdisk)} bytes")
+    
+    print(f"삭제: {removed_count}개, strip: {stripped_count}개 ELF")
+    print(f"새 램디스크 크기: {len(new_ramdisk)} bytes")
 
-    header = bytearray(parsed["header"])
-    struct.pack_into("<I", header, 16, len(new_ramdisk))
+    hdr = bytearray(parsed["header"])
+    import struct
+    struct.pack_into("<I", hdr, 16, len(new_ramdisk))
     page_size = parsed["fields"][7]
-    pad = lambda component: component + b"\0" * (-len(component) % page_size)
-    new_image = (
-        bytes(header)
-        + pad(parsed["components"]["kernel"])
-        + pad(new_ramdisk)
-        + pad(parsed["components"]["second"])
-        + pad(parsed["components"]["dt"])
-        + data[parsed["component_end"]:]
-    )
+    pad = lambda c: c + b"\0" * (-len(c) % page_size)
 
+    new_img = bytes(hdr) + pad(parsed["components"]["kernel"]) + pad(new_ramdisk) + pad(parsed["components"]["second"]) + pad(parsed["components"]["dt"]) + data[parsed["component_end"]:]
+    
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_bytes(new_image)
-    print(f"Wrote slimmed image to: {args.output}")
-    print("WARNING: header SHA-1 is stale; use only as package_recovery.py --built input.")
-
+    args.output.write_bytes(new_img)
+    print(f"슬리밍 이미지 저장 완료: {args.output}")
+    print("⚠️ 부트 헤더 SHA-1 미갱신. 직접 플래시 금지, 패키저 입력으로만 사용하세요.")
 
 if __name__ == "__main__":
     main()
