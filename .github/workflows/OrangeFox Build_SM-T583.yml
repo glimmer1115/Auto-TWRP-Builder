@@ -313,7 +313,7 @@ jobs:
           grep -n -B1 -A3 'debug.SetGCPercent' "$SB_MAIN"
           source build/envsetup.sh
           lunch twrp_gtaxladwifikx-bp2a-eng
-          mka recoveryimage -j"$(nproc)" 2>&1 | tee "${GITHUB_WORKSPACE}/orangefox-build.log"
+          mka recoveryimage -j4 2>&1 | tee "${GITHUB_WORKSPACE}/orangefox-build.log"
           IMAGE="out/target/product/gtaxladwifikx/recovery.img"
           if [ ! -s "$IMAGE" ]; then
             echo "::error::OrangeFox recovery.img 산출물을 찾지 못했습니다."
