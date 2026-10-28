@@ -1,7 +1,0 @@
-*.cpio
-*.img
-*.tar
-ramdisk/
-out/
-build/
-.git/
