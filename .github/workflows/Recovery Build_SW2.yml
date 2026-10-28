@@ -1,0 +1,239 @@
+name: "DEPRECATED - Recovery Build (TeamWin reference only; gtaxlwifi)"
+
+on:
+  workflow_dispatch:
+    inputs:
+      IMG_URL:
+        description: 'Disabled: TeamWin gtaxwifi-family images are reference only; use the SM-T583 workflow.'
+        required: false
+        default: ''
+      MANIFEST_URL:
+        description: 'MANIFEST_URL (if want to use SSH keys, use git@github.com:XXXXX)'
+        required: true
+        default: 'https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni'
+      MANIFEST_BRANCH:
+        description: 'MANIFEST_BRANCH'
+        required: true
+        default: 'twrp-8.1'
+      BUILD_TARGET:
+        description: 'BUILD_TARGET'
+        required: true
+        default: 'recovery'
+
+jobs:
+  build:
+    if: false
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Display Run Parameters
+        run: |
+          echo "::group::User Environment Variables"
+          echo "Image URL: ${{ github.event.inputs.IMG_URL }}"
+          echo "Manifest URL: ${{ github.event.inputs.MANIFEST_URL }}"
+          echo "Manifest Branch: ${{ github.event.inputs.MANIFEST_BRANCH }}"
+          echo "Build Target: ${{ github.event.inputs.BUILD_TARGET }}.img"
+          echo "::endgroup::"
+
+      - name: Check Out
+        uses: actions/checkout@v4
+
+      - name: Cleanup
+        uses: rokibhasansagar/slimhub_actions@main
+
+      - name: Prepare the environment
+        run: |
+          sudo apt update
+          sudo apt -y upgrade
+          sudo apt -y install gperf gcc-multilib gcc-10-multilib g++-multilib g++-10-multilib libc6-dev lib32ncurses5-dev x11proto-core-dev libx11-dev tree lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc bc ccache lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libwxgtk3.0-gtk3-dev libxml2 lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp qemu-user-static libstdc++-10-dev libncurses5 python3
+          sudo apt -y install python3 python3-pip cpio wget file
+          pip3 install twrpdtgen
+
+      - name: Install OpenJDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '8'
+
+      - name: Setup SSH Keys
+        if: ${{ startsWith(github.event.inputs.MANIFEST_URL, 'git@github.com') }}
+        uses: webfactory/ssh-agent@v0.5.4
+        with:
+            ssh-private-key: |
+                ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Install repo
+        run: |
+          mkdir ~/bin
+          curl https://storage.googleapis.com/git-repo-downloads/repo > ~/bin/repo
+          chmod a+x ~/bin/repo
+          sudo ln -sf ~/bin/repo /usr/bin/repo
+
+      - name: Initialize repo
+        id: pwd
+        run: |
+          mkdir workspace
+          cd workspace
+          echo "workspace-folder=$(pwd)" >> $GITHUB_OUTPUT
+          git config --global user.name "azwhikaru"
+          git config --global user.email "azwhikaru+37921907@github.com"
+          repo init --depth=1 -u ${{ github.event.inputs.MANIFEST_URL }} -b ${{ github.event.inputs.MANIFEST_BRANCH }}
+
+      - name: Check Build Tree
+        uses: haya14busa/action-cond@v1
+        id: buildtree
+        with:
+          cond: ${{ github.event.inputs.MANIFEST_BRANCH == 'twrp-11' || github.event.inputs.MANIFEST_BRANCH == 'twrp-12.1' }}
+          if_true: twrp
+          if_false: omni
+
+      - name: Repo Sync
+        run: |
+          for i in {1..3}; do
+            repo sync -j4 --force-sync && break
+            echo "Repo sync failed, retrying..."
+            sleep 5
+          done
+        working-directory: workspace
+
+      - name: Get recovery image
+        env:
+          IMG_URL: ${{ github.event.inputs.IMG_URL }}
+        run: |
+          if [ -n "$IMG_URL" ]; then
+            echo "Downloading $IMG_URL"
+            wget -O recovery.img "$IMG_URL"
+          else
+            echo "Using recovery.img from repository root"
+            cp "${GITHUB_WORKSPACE}/recovery.img" recovery.img
+          fi
+          ls -l recovery.img
+          file recovery.img
+          if [ "$(head -c 8 recovery.img)" != "ANDROID!" ]; then
+            echo "::error::recovery.img is not an Android boot image (HTML page or wrong file?)"
+            head -c 300 recovery.img
+            exit 1
+          fi
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+
+      - name: Generate Device Tree
+        id: gdt
+        run: |
+          python3 ${GITHUB_WORKSPACE}/scripts/build.py -i recovery.img -o device
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+
+      - name: Normalize Device Tree
+        id: normalize
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        run: |
+          set -e
+          OLD_TREE="${{ steps.gdt.outputs.DEVICE_PATH }}"
+          NEW_TREE="device/samsung/gtaxlwifi"
+          echo "Old tree path: $OLD_TREE"
+          if [ "$OLD_TREE" != "$NEW_TREE" ]; then
+            mkdir -p device/samsung
+            rm -rf "$NEW_TREE"
+            if [ -d "$OLD_TREE" ]; then
+              mv "$OLD_TREE" "$NEW_TREE"
+            else
+              echo "::error::Generated device tree path not found!"
+              exit 1
+            fi
+          fi
+          OLD_CODENAME=$(basename "$OLD_TREE")
+          
+          cd "$NEW_TREE"
+          for f in *.mk; do
+            if [[ "$f" == omni_*.mk ]] || [[ "$f" == twrp_*.mk ]]; then
+              mv "$f" "omni_gtaxlwifi.mk"
+              break
+            fi
+          done
+          cd - > /dev/null
+
+          grep -RIl "$OLD_CODENAME" "$NEW_TREE" | xargs -r sed -i "s/${OLD_CODENAME}/gtaxlwifi/g"
+          
+          if [ -f "$NEW_TREE/Android.bp" ]; then
+            rm -f "$NEW_TREE/Android.bp"
+          fi
+
+          echo "makefile_name=omni_gtaxlwifi" >> $GITHUB_OUTPUT
+
+      - name: Inject Custom BoardConfig and Recovery Fstab
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+        run: |
+          echo "Injecting custom BoardConfig.mk settings..."
+          cat << 'EOF' >> device/samsung/gtaxlwifi/BoardConfig.mk
+
+          # --- Custom Display & Partition Settings for gtaxlwifi ---
+          BOARD_RECOVERY_SCREEN_WIDTH := 1200
+          BOARD_RECOVERY_SCREEN_HEIGHT := 1920
+          BOARD_RECOVERYIMAGE_PARTITION_SIZE := 31457280
+          EOF
+
+          echo "Injecting custom recovery.fstab..."
+          cat << 'EOF' > device/samsung/gtaxlwifi/recovery.fstab
+          /boot		emmc	/dev/block/platform/13540000.dwmmc0/by-name/BOOT
+          /recovery	emmc	/dev/block/platform/13540000.dwmmc0/by-name/RECOVERY	flags=backup=1
+          /system		ext4	/dev/block/platform/13540000.dwmmc0/by-name/SYSTEM
+          /system_image	emmc	/dev/block/platform/13540000.dwmmc0/by-name/SYSTEM	flags=flashimg=1
+          /data		ext4	/dev/block/platform/13540000.dwmmc0/by-name/USERDATA	flags=encryptable=footer;length=-20480
+          /cache		ext4	/dev/block/platform/13540000.dwmmc0/by-name/CACHE
+          /modem		emmc	/dev/block/platform/13540000.dwmmc0/by-name/RADIO	flags=backup=1;display="Modem"
+          /modem-cdma	emmc	/dev/block/platform/13540000.dwmmc0/by-name/CDMA-RADIO	flags=backup=1;display="CDMA Modem";subpartitionof=/modem
+          /efs		ext4	/dev/block/platform/13540000.dwmmc0/by-name/EFS		flags=backup=1;display="EFS"
+          /cpefs		emmc	/dev/block/platform/13540000.dwmmc0/by-name/CPEFS	flags=backup=1;display="CPEFS";subpartitionof=/efs
+          /m9kefs1	emmc	/dev/block/platform/13540000.dwmmc0/by-name/m9kefs1	flags=backup=1;subpartitionof=/efs
+          /m9kefs2	emmc	/dev/block/platform/13540000.dwmmc0/by-name/m9kefs2	flags=backup=1;subpartitionof=/efs
+          /m9kefs3	emmc	/dev/block/platform/13540000.dwmmc0/by-name/m9kefs3	flags=backup=1;subpartitionof=/efs
+          /external_sd	vfat	/dev/block/mmcblk1p1 /dev/block/mmcblk1			flags=display="Micro SDcard";storage;wipeingui;removable
+          /usb-otg	vfat	/dev/block/sda1 /dev/block/sda				flags=display="USB-OTG";storage;wipeingui;removable
+          EOF
+
+      - name: Sync Device Dependencies
+        run: |
+          if [ -f "device/samsung/gtaxlwifi/${{ steps.buildtree.outputs.value }}.dependencies" ]; then
+            bash ${GITHUB_WORKSPACE}/scripts/convert.sh device/samsung/gtaxlwifi/${{ steps.buildtree.outputs.value }}.dependencies
+            repo sync -j4
+          else
+            echo "Dependencies file not found, skipping..."
+          fi
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 12
+
+      - name: Switch to Python2
+        run: |
+          sudo apt -y install python2
+          sudo ln -sf /usr/bin/python2 /usr/bin/python
+          python --version
+
+      - name: Building recovery
+        run: |
+          source build/envsetup.sh
+          export ALLOW_MISSING_DEPENDENCIES=true
+          export LC_ALL=C
+          lunch ${{ steps.normalize.outputs.makefile_name }}-eng
+          make clean
+          make ${{ github.event.inputs.BUILD_TARGET }}image -j$(nproc --all)
+        working-directory: ${{ steps.pwd.outputs.workspace-folder }}
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: | 
+            workspace/out/target/product/gtaxlwifi/${{ github.event.inputs.BUILD_TARGET }}.img
+            workspace/out/target/product/gtaxlwifi/*.zip
+            workspace/out/target/product/gtaxlwifi/*vendor*.img
+          name: gtaxlwifi-${{ github.run_id }}
+          tag_name: ${{ github.run_id }}
+          body: |
+            Manifest: ${{ github.event.inputs.MANIFEST_BRANCH }}
+            Device: gtaxlwifi
+            Target: ${{ github.event.inputs.BUILD_TARGET }}.img
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

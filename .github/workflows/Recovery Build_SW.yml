@@ -1,0 +1,879 @@
+name: "Recovery Build (SM-T583 32-bit)"
+
+on:
+  workflow_dispatch:
+    inputs:
+      IMG_URL:
+        description: 'IMG_URL (optional). Leave EMPTY to use recovery.img in the repo root'
+        required: false
+        default: ''
+      MANIFEST_URL:
+        description: 'MANIFEST_URL'
+        required: true
+        default: 'https://github.com/minimal-manifest-twrp/platform_manifest_twrp_omni'
+      MANIFEST_BRANCH:
+        description: 'MANIFEST_BRANCH'
+        required: true
+        default: 'twrp-8.1'
+      BUILD_TARGET:
+        description: 'BUILD_TARGET'
+        required: true
+        default: 'recovery'
+
+# A stuck run must not pin the queue. ubuntu-20.04 no longer has runners,
+# and a job waiting on that label stays "Queued" until the workflow is cancelled.
+concurrency:
+  group: recovery-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.event.repository.owner.id == github.event.sender.id
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    env:
+      IMG_URL: ${{ inputs.IMG_URL }}
+      MANIFEST_URL: ${{ inputs.MANIFEST_URL }}
+      MANIFEST_BRANCH: ${{ inputs.MANIFEST_BRANCH }}
+      BUILD_TARGET: ${{ inputs.BUILD_TARGET }}
+      WS: ${{ github.workspace }}/workspace
+      GIT_TERMINAL_PROMPT: "0"
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Display Run Parameters
+        run: |
+          echo "::group::실행 값"
+          echo "이미지 주소: ${IMG_URL:-<저장소 루트 recovery.img>}"
+          echo "매니페스트 주소: $MANIFEST_URL"
+          echo "매니페스트 브랜치: $MANIFEST_BRANCH"
+          echo "빌드 대상: ${BUILD_TARGET}image"
+          echo "리커버리 ABI: ARM32 armeabi-v7a (ELF32 필수), 순정 커널 슬롯: Image"
+          echo "같은 브랜치에 이미 실행이 있으면 이전 실행은 취소됩니다. 그 취소는 디스크 오류가 아닙니다."
+          echo "::endgroup::"
+
+      - name: Check Out
+        uses: actions/checkout@v7
+
+      - name: Free disk space
+        run: |
+          set -euo pipefail
+          df -h /
+          avail_kb=$(df -Pk / | awk 'NR==2 {print $4}')
+          echo "남은 공간: ${avail_kb}KB"
+          if [ "$avail_kb" -lt 41943040 ]; then
+            echo "::error::루트 디스크 여유가 40GB 미만입니다. 빌드를 중단합니다."
+            exit 1
+          fi
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
+          df -h /
+
+      - name: Prepare the environment
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install \
+            gperf gcc-multilib g++-multilib libc6-dev lib32ncurses-dev x11proto-core-dev \
+            libx11-dev tree lib32z-dev libgl1-mesa-dev libxml2-utils xsltproc bc ccache \
+            lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libxml2 \
+            lzop pngcrush schedtool squashfs-tools imagemagick libbz2-dev lzma ncftp \
+            qemu-user-static libncurses5 python2 python3 python3-pip cpio wget file \
+            unzip zip git curl
+          python3 -m pip install --user -U twrpdtgen
+          # Omni 8.1 scripts use print without parentheses, including files whose
+          # shebang is /usr/bin/python. The runner image points that path at Python 3.
+          sudo apt-get -y remove python-is-python3 || true
+          sudo ln -sfn /usr/bin/python2 /usr/bin/python
+          sudo ln -sfn /usr/bin/python2 /usr/local/bin/python
+          python -c 'import sys; assert sys.version_info[0] == 2, sys.version'
+
+      - name: Install OpenJDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: 'zulu'
+          java-version: '8'
+
+      - name: Install repo
+        run: |
+          sudo curl -fsSL --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 120 \
+            "https://storage.googleapis.com/git-repo-downloads/repo" -o /usr/local/bin/repo
+          sudo chmod a+x /usr/local/bin/repo
+          repo --version || true
+
+      - name: Initialize repo
+        timeout-minutes: 30
+        run: |
+          mkdir -p "$WS"
+          cd "$WS"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global color.ui false
+          git config --global http.lowSpeedLimit 1000
+          git config --global http.lowSpeedTime 30
+          repo init --depth=1 --no-repo-verify -u "$MANIFEST_URL" -b "$MANIFEST_BRANCH"
+
+      - name: Repo Sync
+        timeout-minutes: 120
+        working-directory: ${{ env.WS }}
+        run: |
+          mkdir -p .repo/local_manifests
+          cat > .repo/local_manifests/remove-slang.xml <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <manifest>
+            <remove-project name="platform/frameworks/compile/slang"/>
+            <remove-project name="platform/frameworks/compile/libbcc"/>
+            <remove-project name="platform/frameworks/rs"/>
+          </manifest>
+          EOF
+          ok=0
+          # Stalled git fetches used to sit here until the job limit. Each attempt
+          # is capped, and a dead connection is dropped after 30s below 1KB/s.
+          # RenderScript is not in the recovery image. slang's tag fetch returns
+          # 503, and frameworks/rs then fails ckati looking for rs_version.mk.
+          for spec in "4 50m" "2 40m"; do
+            set -- $spec
+            echo "repo sync -j$1 제한시간 $2"
+            if timeout "$2" repo sync -j"$1" --force-sync --no-clone-bundle --no-tags -c --fail-fast; then
+              ok=1
+              break
+            fi
+            echo "repo sync 실패. 다시 시도합니다."
+            sleep 15
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::repo sync 실패 (시간 초과 또는 오류)"
+            exit 1
+          fi
+
+      - name: Get recovery image
+        working-directory: ${{ env.WS }}
+        run: |
+          if [ -n "$IMG_URL" ]; then
+            echo "다운로드: $IMG_URL"
+            wget --tries=3 --timeout=60 -O recovery.img "$IMG_URL"
+          else
+            echo "저장소 루트의 recovery.img 를 사용합니다."
+            if [ ! -f "${GITHUB_WORKSPACE}/recovery.img" ]; then
+              echo "::error::저장소 루트에 recovery.img 가 없습니다."
+              exit 1
+            fi
+            cp "${GITHUB_WORKSPACE}/recovery.img" recovery.img
+          fi
+          ls -l recovery.img
+          file recovery.img
+          sha256sum recovery.img
+          if [ "$(head -c 8 recovery.img)" != "ANDROID!" ]; then
+            echo "::error::recovery.img 가 안드로이드 부트 이미지가 아닙니다."
+            head -c 300 recovery.img
+            exit 1
+          fi
+          actual_size=$(stat -c '%s' recovery.img)
+          actual_sha256=$(sha256sum recovery.img | cut -d ' ' -f 1)
+          if [ "$actual_size" != "23753248" ] || \
+             [ "$actual_sha256" != "2f9d11fe10e12953486290c9a388ebc23a257d71b167930671159387719cb0ed" ]; then
+            echo "::error::입력 이미지가 검증된 SM-T583 AP stock recovery와 일치하지 않습니다."
+            exit 1
+          fi
+
+      - name: Generate Device Tree
+        id: gdt
+        working-directory: ${{ env.WS }}
+        run: |
+          if [ -f "${GITHUB_WORKSPACE}/scripts/build.py" ]; then
+            python3 "${GITHUB_WORKSPACE}/scripts/build.py" -i recovery.img -o device
+          else
+            echo "scripts/build.py 없음. twrpdtgen 을 직접 사용합니다."
+            python3 -m twrpdtgen recovery.img -o device
+          fi
+
+      - name: Normalize Device Tree
+        id: normalize
+        timeout-minutes: 20
+        working-directory: ${{ env.WS }}
+        env:
+          DEVICE_PATH_OUT: ${{ steps.gdt.outputs.DEVICE_PATH }}
+        run: |
+          set -e
+          IMG="$(pwd)/recovery.img"
+          ANDROID_ROOT="$(pwd)"
+          TREE="$DEVICE_PATH_OUT"
+
+          if [ -z "$TREE" ] || [ ! -d "$TREE" ]; then
+            TREE=$(find device -name AndroidProducts.mk -newer recovery.img -printf '%h\n' 2>/dev/null | head -1)
+          fi
+          if [ -z "$TREE" ] || [ ! -d "$TREE" ]; then
+            echo "::error::생성된 기기 트리 경로를 찾지 못했습니다."
+            ls -R device | head -50 || true
+            exit 1
+          fi
+          TREE=$(realpath --relative-to="$(pwd)" "$TREE")
+          echo "생성된 트리 경로: $TREE"
+          if [[ "$TREE" != "device/samsung/gtaxladwifikx" ]]; then
+            echo "::error::SM-T583 전용 트리가 아닙니다: $TREE (expected device/samsung/gtaxladwifikx). 다른 모델의 TeamWin 이미지는 참고 자료로만 사용하세요."
+            exit 1
+          fi
+          CODENAME=$(basename "$TREE")
+
+          cd "$TREE"
+          MK=""
+          for f in omni_*.mk twrp_*.mk; do
+            if [ -f "$f" ]; then
+              MK="$f"
+              break
+            fi
+          done
+          if [ -z "$MK" ]; then
+            echo "::error::$TREE 에 omni_/twrp_ makefile 이 없습니다."
+            ls -l
+            exit 1
+          fi
+          if [[ "$MANIFEST_BRANCH" == twrp-1* ]]; then
+            if [[ "$MK" == omni_* ]]; then
+              mv "$MK" "twrp_${CODENAME}.mk"
+              MK="twrp_${CODENAME}.mk"
+            fi
+            sed -i 's/omni_/twrp_/g' AndroidProducts.mk "$MK"
+            sed -i 's#vendor/omni/config/common.mk#vendor/twrp/config/common.mk#g' "$MK"
+            LUNCH_PREFIX=twrp
+          else
+            LUNCH_PREFIX=omni
+            echo "오레오 트리는 omni_${CODENAME} 을 유지합니다."
+          fi
+          grep -Eq "PRODUCT_NAME *:= *${LUNCH_PREFIX}_${CODENAME}" "$MK" \
+            || echo "::warning::$MK 의 PRODUCT_NAME 이 ${LUNCH_PREFIX}_${CODENAME} 이 아닙니다. lunch 가 실패할 수 있습니다."
+
+          cat >> "$MK" <<'EOF'
+
+          # Recovery ADB must be root-capable and unauthenticated on this Oreo 8.1 build.
+          PRODUCT_DEFAULT_PROPERTY_OVERRIDES += \
+              ro.adb.secure=0 \
+              ro.debuggable=1 \
+              ro.secure=0 \
+              persist.sys.usb.config=adb
+          EOF
+
+          for prop_file in recovery/root/default.prop recovery/root/prop.default; do
+            if [ -f "$prop_file" ]; then
+              sed -i -E '/^(ro\.debuggable|ro\.secure|ro\.adb\.secure|persist\.sys\.usb\.config)=/d' "$prop_file"
+              printf '%s\n' \
+                'ro.debuggable=1' \
+                'ro.secure=0' \
+                'ro.adb.secure=0' \
+                'persist.sys.usb.config=adb' >> "$prop_file"
+              echo "Recovery 속성을 적용했습니다: $prop_file"
+            fi
+          done
+
+          rm -f Android.bp
+
+          mkdir -p prebuilt recovery/root
+          python3 - "$IMG" <<'PY'
+          import hashlib, struct, sys
+          d = open(sys.argv[1], 'rb').read()
+          assert d[:8] == b'ANDROID!', 'Invalid Android boot image magic.'
+          ks, ka, rs, ra, ss, sa, ta, pg, dts = struct.unpack('<9I', d[8:44])
+          assert ks > 0, 'Kernel size is zero.'
+          kernel = d[pg:pg + ks]
+          assert len(kernel) == ks, 'Kernel data is truncated.'
+          assert kernel[56:60] == b'ARM\x64', 'Expected the stock Exynos 7870 ARM64 Image header.'
+          kind = 'Stock kernel Image (separate from the ARM32 recovery ABI)'
+          open('prebuilt/Image', 'wb').write(kernel)
+          print('Kernel bytes:', ks, 'page size:', pg, 'dt size:', dts)
+          print('Detected:', kind)
+          print('Kernel SHA-256:', hashlib.sha256(kernel).hexdigest())
+          print('Saved stock kernel to prebuilt/Image.')
+          PY
+          ls -l prebuilt
+          file prebuilt/Image || true
+
+          if [ ! -f "${GITHUB_WORKSPACE}/overrides/BoardConfig.mk" ]; then
+            echo "::error::overrides/BoardConfig.mk 가 없습니다."
+            exit 1
+          fi
+          {
+            echo ""
+            echo "# ---- appended by workflow: overrides/BoardConfig.mk ----"
+            echo "DEVICE_PATH := ${TREE}"
+            cat "${GITHUB_WORKSPACE}/overrides/BoardConfig.mk"
+          } >> BoardConfig.mk
+          echo "overrides/BoardConfig.mk 를 적용했습니다."
+          mkdir -p sepolicy
+          if [ ! -f "${GITHUB_WORKSPACE}/overrides/init.recovery.samsungexynos7870.rc" ]; then
+            echo "::error::overrides/init.recovery.samsungexynos7870.rc 가 없습니다."
+            exit 1
+          fi
+          cp "${GITHUB_WORKSPACE}/overrides/init.recovery.samsungexynos7870.rc" recovery/root/
+          cp "${GITHUB_WORKSPACE}/overrides/init.recovery.usb.rc" recovery/root/init.recovery.usb.rc
+          cp "${GITHUB_WORKSPACE}/overrides/init.recovery.usb.rc" "${ANDROID_ROOT}/bootable/recovery/etc/init.recovery.usb.rc"
+          mkdir -p recovery/root/sbin
+          cp "${GITHUB_WORKSPACE}/overrides/watchdogd.sh" recovery/root/sbin/watchdogd.sh
+          cp "${GITHUB_WORKSPACE}/overrides/usbwait.sh" recovery/root/sbin/usbwait.sh
+          chmod 755 recovery/root/sbin/watchdogd.sh recovery/root/sbin/usbwait.sh
+          RC="${ANDROID_ROOT}/bootable/recovery/etc/init.rc"
+          if [ ! -f "$RC" ]; then
+            echo "::error::init.rc 를 찾지 못했습니다: $RC"
+            exit 1
+          fi
+          if ! grep -q 'init.recovery.${ro.hardware}.rc' "$RC"; then
+            echo "::error::init.rc 가 기기 rc 를 읽지 않습니다."
+            exit 1
+          fi
+          if grep -q '/init.recovery.samsungexynos7870.rc' "$RC"; then
+            echo "::error::엑시노스 rc 가 두 번 실행되면 gadget 이 바로 꺼집니다."
+            exit 1
+          fi
+          MINUI="${ANDROID_ROOT}/bootable/recovery/minuitwrp/Android.mk"
+          if [ ! -f "$MINUI" ]; then
+            echo "::error::minuitwrp Android.mk 가 없습니다: $MINUI"
+            exit 1
+          fi
+          if ! grep -q 'TW_NO_SCREEN_BLANK' "$MINUI"; then
+            python3 - "$MINUI" <<'PY'
+          import sys
+          path = sys.argv[1]
+          text = open(path, encoding='utf-8').read()
+          needle = "include $(BUILD_SHARED_LIBRARY)\n"
+          insert = (
+              "ifeq ($(TW_NO_SCREEN_BLANK), true)\n"
+              "LOCAL_CFLAGS += -DTW_NO_SCREEN_BLANK\n"
+              "endif\n"
+              "\n"
+          )
+          idx = text.rfind(needle)
+          if idx < 0:
+              sys.exit('minui Android.mk 에서 BUILD_SHARED_LIBRARY 를 찾지 못했습니다.')
+          open(path, 'w', encoding='utf-8', newline='\n').write(text[:idx] + insert + text[idx:])
+          print('libminuitwrp 의 fbdev_blank 를 no-op 으로 만들었습니다.')
+          PY
+          fi
+          if [ ! -f "${GITHUB_WORKSPACE}/overrides/bootable/recovery/gui/gui.cpp" ]; then
+            echo "::error::overrides/bootable/recovery/gui/gui.cpp 가 없습니다."
+            exit 1
+          fi
+          cp "${GITHUB_WORKSPACE}/overrides/bootable/recovery/gui/gui.cpp" "${ANDROID_ROOT}/bootable/recovery/gui/gui.cpp"
+          echo "overrides/bootable/recovery/gui/gui.cpp 를 적용했습니다."
+          python3 "${GITHUB_WORKSPACE}/scripts/patch_bringup.py" --init-rc "$RC"
+          python3 "${GITHUB_WORKSPACE}/scripts/patch_bringup.py" --usb-ffs "${ANDROID_ROOT}/system/core/adb/daemon/usb.cpp"
+          python3 "${GITHUB_WORKSPACE}/scripts/patch_bringup.py" --adb-main "${ANDROID_ROOT}/system/core/adb/daemon/main.cpp"
+          python3 "${GITHUB_WORKSPACE}/scripts/patch_bringup.py" --crash "${ANDROID_ROOT}/bootable/recovery"
+          python3 "${GITHUB_WORKSPACE}/scripts/patch_bringup.py" --fbdev "${ANDROID_ROOT}/bootable/recovery/minuitwrp/graphics_fbdev.cpp"
+          {
+            echo 'TARGET_RECOVERY_PIXEL_FORMAT := "ABGR_8888"'
+            echo 'TW_BRIGHTNESS_PATH := "/sys/devices/14800000.dsim/backlight/panel/brightness"'
+            echo "TW_MAX_BRIGHTNESS := 306"
+            echo "TW_DEFAULT_BRIGHTNESS := 200"
+            echo "TW_NO_SCREEN_BLANK := true"
+            echo "TW_NO_SCREEN_TIMEOUT := true"
+            echo "RECOVERY_GRAPHICS_FORCE_USE_LINELENGTH := true"
+            echo "RECOVERY_GRAPHICS_FORCE_SINGLE_BUFFER := true"
+          } >> "$MK"
+
+          echo "---- 아키텍처 설정 ----"
+          grep -E 'TARGET_ARCH|TARGET_CPU_ABI|KERNEL_IMAGE|PREBUILT_KERNEL|TARGET_2ND' BoardConfig.mk
+          echo "---- recovery/root ----"
+          ls -l recovery/root
+          cd - > /dev/null
+
+          echo "codename=${CODENAME}" >> "$GITHUB_OUTPUT"
+          echo "tree=${TREE}" >> "$GITHUB_OUTPUT"
+          echo "lunch_prefix=${LUNCH_PREFIX}" >> "$GITHUB_OUTPUT"
+
+      - name: Build recovery
+        timeout-minutes: 90
+        working-directory: ${{ env.WS }}
+        env:
+          CODENAME: ${{ steps.normalize.outputs.codename }}
+          TREE: ${{ steps.normalize.outputs.tree }}
+          LUNCH_PREFIX: ${{ steps.normalize.outputs.lunch_prefix }}
+        run: |
+          if [ ! -f "${TREE}/${LUNCH_PREFIX}_${CODENAME}.mk" ]; then
+            echo "::error::제품 makefile ${TREE}/${LUNCH_PREFIX}_${CODENAME}.mk 가 없습니다. lunch 를 호출하지 않습니다."
+            find device -name '*.mk' | head -40 || true
+            exit 1
+          fi
+          # Close stdin first. lunch without a resolved product reads a menu
+          # and will block until the job timeout on a runner with no TTY.
+          exec 0</dev/null
+          sudo ln -sfn /usr/bin/python2 /usr/bin/python
+          sudo ln -sfn /usr/bin/python2 /usr/local/bin/python
+          if ! python -c 'import sys; raise SystemExit(0 if sys.version_info[0] == 2 else 1)'; then
+            echo "::error::빌드용 python 이 Python 2가 아닙니다. Omni 8.1 스크립트가 print 문법에서 멈춥니다."
+            python --version || true
+            exit 1
+          fi
+          if [ ! -f frameworks/compile/slang/rs_version.mk ]; then
+            mkdir -p frameworks/compile/slang
+            printf '%s\n' 'RS_VERSION := 24' 'RS_VERSION_DEFINE := -DRS_VERSION=$(RS_VERSION)' > frameworks/compile/slang/rs_version.mk
+          fi
+          set +e
+          export ALLOW_MISSING_DEPENDENCIES=true
+          export LC_ALL=C
+          source build/envsetup.sh
+          lunch "${LUNCH_PREFIX}_${CODENAME}-eng"
+          lunch_rc=$?
+          set -e
+          if [ "$lunch_rc" != "0" ]; then
+            echo "::error::lunch ${LUNCH_PREFIX}_${CODENAME}-eng 실패 (종료 $lunch_rc)"
+            exit 1
+          fi
+
+          set -o pipefail
+          mka BOARD_USES_RECOVERY_AS_BOOT=false "${BUILD_TARGET}image" -j"$(nproc)" 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" != "0" ]; then
+            echo "::error::빌드 실패 (종료 코드 $rc)"
+            [ -f out/error.log ] && tail -n 80 out/error.log
+            exit "$rc"
+          fi
+
+          ROOT="out/target/product/${CODENAME}/recovery/root"
+          if [ ! -f "$ROOT/default.prop" ]; then
+            echo "::error::recovery 램디스크 default.prop 가 없습니다."
+            exit 1
+          fi
+          for prop_file in "$ROOT/default.prop" "$ROOT/prop.default"; do
+            if [ ! -f "$prop_file" ]; then
+              continue
+            fi
+            for prop in ro.debuggable=1 ro.secure=0 ro.adb.secure=0 persist.sys.usb.config=adb; do
+              key=${prop%%=*}
+              actual=$(grep -E "^${key}=" "$prop_file" | tail -n 1 || true)
+              if [ "$actual" != "$prop" ]; then
+                echo "::error::recovery 속성 파일 $prop_file 에 $prop 값이 없습니다."
+                grep -E '^(ro.debuggable|ro.secure|ro.adb.secure|persist.sys.usb.config)=' "$prop_file" || true
+                exit 1
+              fi
+            done
+          done
+          if [ ! -e "$ROOT/sbin/linker" ]; then
+            src=$(find "out/target/product/${CODENAME}/system" "out/target/product/${CODENAME}/obj" \
+              -name linker -type f ! -name linker64 2>/dev/null | head -1 || true)
+            if [ -n "$src" ]; then
+              mkdir -p "$ROOT/sbin"
+              cp -a "$src" "$ROOT/sbin/linker"
+              echo "linker 를 램디스크에 넣었습니다: $src"
+              mka BOARD_USES_RECOVERY_AS_BOOT=false "${BUILD_TARGET}image" -j"$(nproc)" 2>&1 | tee -a "$GITHUB_WORKSPACE/build.log"
+              rc=${PIPESTATUS[0]}
+              if [ "$rc" != "0" ]; then
+                echo "::error::linker 반영 후 재빌드 실패 (종료 코드 $rc)"
+                exit "$rc"
+              fi
+            fi
+          fi
+          if ! file "$ROOT/init" | grep -q 'ELF 32-bit'; then
+            echo "::error::init 이 ELF32 가 아닙니다. 64비트 init 은 이 커널에서 5초마다 재부팅됩니다."
+            file "$ROOT/init" "$ROOT/sbin/recovery" "$ROOT/sbin/adbd" || true
+            exit 1
+          fi
+          missing=0
+          for f in init sbin/adbd sbin/recovery; do
+            if [ ! -e "$ROOT/$f" ]; then
+              echo "::error::램디스크에 $f 가 없습니다."
+              missing=1
+            fi
+          done
+          if [ "$missing" != "0" ]; then
+            find "$ROOT" -maxdepth 2 \( -type f -o -type l \) | head -80 || true
+            exit 1
+          fi
+          file "$ROOT/sbin/recovery" "$ROOT/init" "$ROOT/sbin/adbd" || true
+          lib=$(find "out/target/product/${CODENAME}" -name 'libminuitwrp.so' -print | head -1)
+          if [ -z "$lib" ]; then
+            echo "::error::libminuitwrp.so 가 없습니다. 단일 버퍼와 blank no-op 을 확인할 수 없습니다."
+            exit 1
+          fi
+          echo "minui 라이브러리: $lib"
+          if ! grep -a -q 'RECOVERY_GRAPHICS_FORCE_SINGLE_BUFFER := true' "$lib"; then
+            echo "::error::단일 버퍼 플래그가 libminuitwrp 에 컴파일되지 않았습니다."
+            exit 1
+          fi
+          if grep -a -q 'ioctl(): blank' "$lib"; then
+            echo "::error::fbdev_blank 가 아직 FBIOBLANK 를 호출합니다. 이 패널은 그때 꺼집니다."
+            exit 1
+          fi
+          if grep -a -q 'cannot open LCD backlight' "$lib"; then
+            echo "::error::fbdev_blank 가 밝기 0 을 쓰도록 컴파일되었습니다."
+            exit 1
+          fi
+          if grep -a -q '/sbin/postscreenblank.sh' "$ROOT/sbin/recovery"; then
+            echo "::error::blanktimer 가 아직 밝기 0 을 씁니다. TW_NO_SCREEN_TIMEOUT 이 libguitwrp 에 없습니다."
+            exit 1
+          fi
+          if ! grep -a -q 'SM-T583: settings storage not mounted' "$ROOT/sbin/recovery"; then
+            echo "::error::설정 파티션 재시도가 recovery 에 그대로 있습니다."
+            exit 1
+          fi
+          if ! grep -a -q 'SM-T583 stage gui-start' "$ROOT/sbin/recovery"; then
+            echo "::error::크래시 단계 로그가 recovery 에 없습니다."
+            exit 1
+          fi
+          if ! grep -a -q 'SM-T583: theme is not loaded' "$ROOT/sbin/recovery"; then
+            echo "::error::빈 테마 포인터 가드가 recovery 에 없습니다."
+            exit 1
+          fi
+          if ! grep -a -q 'SM-T583 stage skip-language' "$ROOT/sbin/recovery"; then
+            echo "::error::부팅 중 언어 로드가 그대로입니다."
+            exit 1
+          fi
+          if ! grep -a -q '/cache/recovery/sm-stage' "$ROOT/sbin/recovery"; then
+            echo "::error::단계 밝기 표시가 recovery 에 없습니다."
+            exit 1
+          fi
+          if ! grep -a -q -r 'SM-T583 skip splash' "$ROOT"; then
+            echo "::error::스플래시 화면이 그대로입니다."
+            exit 1
+          fi
+          if ! grep -a -q 'SM-T583: skip late brightness restore' "$ROOT/sbin/recovery"; then
+            echo "::error::설정 로드 뒤 밝기 복원이 그대로입니다."
+            exit 1
+          fi
+          if ! grep -a -q 'SM-T583 stage skip-sar' "$ROOT/sbin/recovery"; then
+            echo "::error::시스템 루트 탐색이 그대로입니다."
+            exit 1
+          fi
+          if ! grep -a -q 'SM-T583: skip partition size scan' "$ROOT/sbin/recovery"; then
+            echo "::error::테마 로드 전 파티션 용량 검사가 그대로입니다."
+            exit 1
+          fi
+          for tag in 'SM-T583 stage beacon89 partition-log-done' 'SM-T583 beacon89 part' 'SM-T583 beacon89 gui' 'SM-T583 beacon89 pages' 'SM-T583 beacon89 res'; do
+            if ! grep -a -q "$tag" "$ROOT/sbin/recovery"; then
+              echo "::error::빌드 89 디버그 비콘이 recovery 에 없습니다: $tag"
+              exit 1
+            fi
+          done
+          if grep -q 'restart adbd' "$ROOT/init.rc"; then
+            echo "::error::init.rc 가 adbd 를 다시 죽입니다."
+            exit 1
+          fi
+          if grep -q 'wait /dev/usb-ffs/adb/ep1' "$ROOT/init.recovery.samsungexynos7870.rc"; then
+            echo "::error::ep1 대기는 디스크립터가 쓰이기 전에 gadget 을 켭니다."
+            exit 1
+          fi
+          if grep -q 'exec /sbin/toybox sleep 2' "$ROOT/init.recovery.samsungexynos7870.rc"; then
+            echo "::error::도메인 없는 toybox 실행은 거부되고 gadget 이 바로 켜집니다."
+            exit 1
+          fi
+          if ! grep -q 'exec u:r:recovery:s0 root root -- /sbin/usbwait.sh' "$ROOT/init.recovery.samsungexynos7870.rc"; then
+            echo "::error::gadget 대기가 recovery 도메인에서 돌지 않습니다."
+            exit 1
+          fi
+          if [ ! -f "$ROOT/sbin/usbwait.sh" ]; then
+            echo "::error::램디스크에 usbwait.sh 가 없습니다."
+            exit 1
+          fi
+          if ! grep -q 'chmod 0666 /dev/usb-ffs/adb/ep0' "$ROOT/init.recovery.samsungexynos7870.rc"; then
+            echo "::error::ep0 가 shell 계정에 열려 있지 않습니다."
+            exit 1
+          fi
+          if ! grep -a -q 'SM-T583: functionfs v1 descriptors' "$ROOT/sbin/adbd"; then
+            echo "::error::거절된 v2 디스크립터 뒤에 ep0 를 다시 열지 않습니다."
+            exit 1
+          fi
+          if ! grep -a -q 'SM-T583: wait for functionfs endpoints' "$ROOT/sbin/adbd"; then
+            echo "::error::adbd 가 ep1 생성 전에 ep0 를 닫습니다."
+            exit 1
+          fi
+          if ! grep -a -q 'SM-T583: always listen on functionfs' "$ROOT/sbin/adbd"; then
+            echo "::error::adbd 가 시작 때 ep0 가 없으면 USB 를 포기합니다."
+            exit 1
+          fi
+          if grep -q 'setprop sys.usb.config=' "$ROOT/init.recovery.samsungexynos7870.rc" || grep -q 'setprop sys.usb.config ' "$ROOT/init.recovery.samsungexynos7870.rc"; then
+            echo "::error::sys.usb.config 가 adbd 를 다시 건드립니다."
+            exit 1
+          fi
+          if [ ! -f "$ROOT/init.recovery.usb.rc" ] || grep -q 'idProduct D001' "$ROOT/init.recovery.usb.rc"; then
+            echo "::error::순정 USB rc 가 18d1:d001 로 덮어씁니다."
+            exit 1
+          fi
+
+          if [ ! -f "out/target/product/${CODENAME}/recovery.img" ]; then
+            echo "::error::빌드는 끝났지만 recovery.img 가 생성되지 않았습니다."
+            ls -l "out/target/product/${CODENAME}" || true
+            exit 1
+          fi
+
+      - name: Package for Odin
+        working-directory: ${{ env.WS }}
+        env:
+          CODENAME: ${{ steps.normalize.outputs.codename }}
+        run: |
+          set -e
+          OUT="out/target/product/${CODENAME}"
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+          cp "$OUT/recovery.img" built_recovery.img
+          python3 - recovery.img built_recovery.img "$GITHUB_WORKSPACE/artifacts/recovery.img" <<'PY'
+          import gzip, hashlib, os, struct, subprocess, sys, tempfile
+
+          PART_SIZE = 39845888
+          TRAILER = b'SEANDROIDENFORCE'
+
+          def retarget_linker(raw):
+              # Same-length swaps only. Inserting another linker64 changes the
+              # ramdisk length and this bootloader rejects it ("invalid ramdisk length").
+              swaps = (
+                  (b'/system/bin/linker64\x00', b'/sbin/linker64\x00' + b'\x00' * 6),
+                  (b'/system/bin/linker\x00', b'/sbin/linker\x00' + b'\x00' * 6),
+                  (b'/system/lib64\x00', b'/sbin\x00' + b'\x00' * 8),
+                  (b'/system/lib\x00', b'/sbin\x00' + b'\x00' * 6),
+              )
+              count = 0
+              for old, new in swaps:
+                  if len(old) != len(new):
+                      sys.exit('링커 경로 길이가 다릅니다: %d %d' % (len(old), len(new)))
+                  found = raw.count(old)
+                  raw = raw.replace(old, new)
+                  count += found
+              print('링커 경로 수정 횟수', count)
+              return raw
+
+          def as_gzip_ramdisk(blob):
+              if blob[:2] == b'\x1f\x8b':
+                  raw = gzip.decompress(blob)
+                  print('빌드 램디스크는 gzip 입니다.')
+              elif blob[:6] in (b'070701', b'070702'):
+                  raw = blob
+                  print('빌드 램디스크는 일반 cpio 입니다.')
+              else:
+                  print('빌드 램디스크 매직', blob[:4].hex())
+                  raw = None
+                  td = tempfile.mkdtemp()
+                  src = os.path.join(td, 'rd.bin')
+                  dst = os.path.join(td, 'rd.cpio')
+                  with open(src, 'wb') as f:
+                      f.write(blob)
+                  for cmd in (
+                      ['lz4', '-d', '-f', src, dst],
+                      ['lz4', '-d', '-l', '-f', src, dst],
+                  ):
+                      try:
+                          subprocess.check_call(cmd)
+                      except Exception as exc:
+                          print('램디스크 해제 실패', cmd, exc)
+                          continue
+                      if os.path.isfile(dst) and os.path.getsize(dst) > 0:
+                          raw = open(dst, 'rb').read()
+                          print('해제한 명령', ' '.join(cmd))
+                          break
+              if raw is None or raw[:6] not in (b'070701', b'070702'):
+                  sys.exit('램디스크가 gzip cpio 가 아닙니다. 오레오 부트로더는 invalid ramdisk 로 멈춥니다.')
+              raw = retarget_linker(raw)
+              out = bytearray(gzip.compress(raw, compresslevel=9, mtime=0))
+              # Stock recovery gzip is 1f 8b 08 00 | mtime 0 | xfl 0 | os 3.
+              # Python writes xfl 2 and os 255. This bootloader checks that header.
+              if out[:4] != b'\x1f\x8b\x08\x00':
+                  sys.exit('gzip 헤더 플래그가 0이 아닙니다.')
+              out[8] = 0
+              out[9] = 3
+              isize = struct.unpack_from('<I', out, len(out) - 4)[0]
+              if isize != (len(raw) & 0xFFFFFFFF):
+                  sys.exit('gzip 해제 길이가 cpio 길이와 다릅니다: %d != %d' % (isize, len(raw)))
+              print('gzip 램디스크 바이트', len(out), '해제', isize)
+              return bytes(out)
+
+          def parse(d):
+              assert d[:8] == b'ANDROID!', '부트 매직이 아닙니다.'
+              ks, ka, rs, ra, ss, sa, ta, pg, dts = struct.unpack('<9I', d[8:44])
+              up = lambda n: (n + pg - 1) // pg * pg
+              o1 = pg; o2 = o1 + up(ks); o3 = o2 + up(rs); o4 = o3 + up(ss)
+              return dict(ka=ka, ra=ra, sa=sa, pg=pg,
+                          k=d[o1:o1 + ks], r=d[o2:o2 + rs], dt=d[o4:o4 + dts])
+
+          def verify_recovery_properties(raw):
+              offset = 0
+              entries = {}
+              while offset + 110 <= len(raw):
+                  header = raw[offset:offset + 110]
+                  if header[:6] not in (b'070701', b'070702'):
+                      sys.exit('최종 램디스크가 newc CPIO 형식이 아닙니다.')
+                  file_size = int(header[54:62], 16)
+                  name_size = int(header[94:102], 16)
+                  name_start = offset + 110
+                  name_end = name_start + name_size
+                  if name_size < 1 or name_end > len(raw):
+                      sys.exit('최종 램디스크 CPIO 경로가 잘렸습니다.')
+                  name = raw[name_start:name_end - 1].decode('utf-8', 'replace').lstrip('./')
+                  data_start = (name_end + 3) & ~3
+                  data_end = data_start + file_size
+                  if data_end > len(raw):
+                      sys.exit('최종 램디스크 CPIO 파일이 잘렸습니다: ' + name)
+                  if name == 'TRAILER!!!':
+                      break
+                  entries[name] = (int(header[14:22], 16), raw[data_start:data_end])
+                  offset = (data_end + 3) & ~3
+
+              def read_prop_file(path):
+                  for _ in range(8):
+                      if path not in entries:
+                          return None
+                      mode, data = entries[path]
+                      if mode & 0o170000 != 0o120000:
+                          return data.decode('utf-8', 'replace')
+                      target = data.decode('utf-8', 'replace')
+                      path = os.path.normpath(os.path.join(os.path.dirname(path), target)).lstrip('./')
+                  return None
+
+              prop_files = {}
+              for path in ('default.prop', 'prop.default'):
+                  contents = read_prop_file(path)
+                  if contents is not None:
+                      prop_files[path] = contents
+              if 'default.prop' not in prop_files:
+                  sys.exit('최종 recovery.img 램디스크에 default.prop 가 없습니다.')
+              expected = {
+                  'ro.debuggable': '1',
+                  'ro.secure': '0',
+                  'ro.adb.secure': '0',
+                  'persist.sys.usb.config': 'adb',
+              }
+              for path, contents in prop_files.items():
+                  values = {}
+                  for line in contents.splitlines():
+                      if '=' in line and not line.lstrip().startswith('#'):
+                          key, value = line.split('=', 1)
+                          values[key] = value
+                  for key, value in expected.items():
+                      if values.get(key) != value:
+                          print('%s 실제 값: %s' % (path, {k: values.get(k) for k in expected}))
+                          sys.exit('최종 recovery.img 의 %s 에 %s=%s 가 없습니다.' % (path, key, value))
+              print('최종 recovery.img 속성 확인: ro.debuggable=1, ro.secure=0, ro.adb.secure=0, persist.sys.usb.config=adb')
+
+          stock = open(sys.argv[1], 'rb').read()
+          built = open(sys.argv[2], 'rb').read()
+          st = parse(stock); b = parse(built)
+          pg = st['pg']
+          # Stock kernel bytes + stock DTBH. TWRP ramdisk forced to gzip.
+          kernel = st['k']; ramdisk = as_gzip_ramdisk(b['r']); dt = st['dt']
+          assert len(kernel) > 0, '순정 커널이 비어 있습니다.'
+          assert ramdisk[:10] == bytes.fromhex('1f8b0800000000000003'), 'gzip 헤더가 순정 형식이 아닙니다.'
+          print('순정 램디스크 매직', st['r'][:4].hex())
+          print('커널', len(kernel), '램디스크', len(ramdisk), 'dt', len(dt))
+
+          PAGE = 2048
+          KERNEL_ADDR = 0x10008000
+          RAMDISK_ADDR = 0x11000000
+          SECOND_ADDR = 0x10F00000
+          TAGS_ADDR = 0x10000100
+          stock_end = PAGE
+          for off in (8, 16, 24, 40):
+              stock_end += (struct.unpack_from('<I', stock, off)[0] + PAGE - 1) // PAGE * PAGE
+          if stock[stock_end:stock_end + len(TRAILER)] != TRAILER:
+              sys.exit('입력 recovery.img 의 %d 위치에 SEANDROIDENFORCE 가 없습니다.' % stock_end)
+          print('입력 recovery.img 크기', len(stock), 'SEANDROIDENFORCE 위치', stock_end)
+          if st['pg'] != PAGE or st['ka'] != KERNEL_ADDR or st['ra'] != RAMDISK_ADDR:
+              sys.exit('순정 헤더 주소가 예상과 다릅니다 page=%s ka=%s ra=%s' % (st['pg'], hex(st['ka']), hex(st['ra'])))
+          if len(dt) != 364544:
+              sys.exit('순정 dt 길이가 364544 가 아닙니다: %d' % len(dt))
+
+          hdr = bytearray(stock[:PAGE])
+          # ramdisk_size is the compressed gzip length, not the cpio length.
+          struct.pack_into('<I', hdr, 8, len(kernel))
+          struct.pack_into('<I', hdr, 12, KERNEL_ADDR)
+          struct.pack_into('<I', hdr, 16, len(ramdisk))
+          struct.pack_into('<I', hdr, 20, RAMDISK_ADDR)
+          struct.pack_into('<I', hdr, 24, 0)
+          struct.pack_into('<I', hdr, 28, SECOND_ADDR)
+          struct.pack_into('<I', hdr, 32, TAGS_ADDR)
+          struct.pack_into('<I', hdr, 36, PAGE)
+          struct.pack_into('<I', hdr, 40, len(dt))
+          if hdr[48:61] != b'SRPRA23C001RU':
+              sys.exit('보드 id 가 SRPRA23C001RU 가 아닙니다.')
+
+          h = hashlib.sha1()
+          h.update(kernel); h.update(struct.pack('<I', len(kernel)))
+          h.update(ramdisk); h.update(struct.pack('<I', len(ramdisk)))
+          h.update(b''); h.update(struct.pack('<I', 0))
+          h.update(dt); h.update(struct.pack('<I', len(dt)))
+          hdr[576:596] = h.digest()
+          hdr[596:608] = b'\0' * 12
+          print('램디스크 길이', len(ramdisk), '주소', hex(RAMDISK_ADDR), 'id', hdr[576:596].hex())
+
+          up = lambda n: (n + pg - 1) // pg * pg
+          pad = lambda x: x + b'\0' * (up(len(x)) - len(x))
+          out = bytes(hdr) + pad(kernel) + pad(ramdisk) + pad(dt)
+          assert len(out) + len(TRAILER) <= PART_SIZE, '이미지가 너무 큽니다: %d' % (len(out) + len(TRAILER))
+          verify_recovery_properties(gzip.decompress(parse(out)['r']))
+          open(sys.argv[3], 'wb').write(out)
+          print('최종 크기 (트레일러 전)', len(out), '/', PART_SIZE)
+          PY
+          cd "$GITHUB_WORKSPACE/artifacts"
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('recovery.img')
+          trailer = b'SEANDROIDENFORCE'
+          image = path.read_bytes()
+          original_size = len(image)
+          while image.endswith(trailer):
+              image = image[:-len(trailer)]
+          image += trailer
+          if image.endswith(trailer * 2):
+              raise SystemExit('최종 recovery.img 에 SEANDROIDENFORCE 가 중복됩니다.')
+          if len(image) > 39845888:
+              raise SystemExit('최종 recovery.img 가 파티션 크기 39845888 을 넘습니다.')
+          path.write_bytes(image)
+          print('SEANDROIDENFORCE 단일 부착:', original_size, '->', len(image))
+          PY
+          if [ "$(tail -c 16 recovery.img)" != "SEANDROIDENFORCE" ]; then
+            echo "::error::최종 recovery.img 끝에 SEANDROIDENFORCE 가 없습니다."
+            exit 1
+          fi
+          if [ "$(stat -c %s recovery.img)" -gt 39845888 ]; then
+            echo "::error::최종 recovery.img 가 파티션 크기 39845888 을 넘습니다."
+            exit 1
+          fi
+          tar -H ustar -c recovery.img > TWRP-recovery.tar
+          ls -l
+          sha256sum recovery.img TWRP-recovery.tar
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: twrp-${{ steps.normalize.outputs.codename }}
+          path: |
+            artifacts/recovery.img
+            artifacts/TWRP-recovery.tar
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload debug logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: debug-${{ github.run_id }}
+          path: |
+            build.log
+            workspace/out/error.log
+            workspace/out/verbose.log.gz
+            workspace/device/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Notify Telegram on build success
+        if: success()
+        continue-on-error: true
+        uses: appleboy/telegram-action@390cf7345777cd821dba28c72f436a78bce19cc5
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            🎉 *TWRP 리커버리 빌드 성공!*
+
+            ✨ 빌드가 정상적으로 완료되었습니다.
+            딸깍용 장난감에 올릴 준비를 하세요! 🚀
+
+      - name: Notify Telegram on build failure
+        if: failure()
+        continue-on-error: true
+        uses: appleboy/telegram-action@390cf7345777cd821dba28c72f436a78bce19cc5
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            🚨 *TWRP 빌드 실패 (에러 발생)*
+
+            빌드 로그와 업로드된 진단 아티팩트를 확인해 주세요.

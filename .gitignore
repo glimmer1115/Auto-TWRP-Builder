@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+artifacts/
+backups/
+evidence/
+orangefox-sm-t583-diagnostics/
+check_json.py
+config.gz
+*.log
