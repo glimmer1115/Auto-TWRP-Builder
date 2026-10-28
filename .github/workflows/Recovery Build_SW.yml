@@ -99,7 +99,7 @@ jobs:
       - name: Install repo
         run: |
           sudo curl -fsSL --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 120 \
-            https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
+            "https://storage.googleapis.com/git-repo-downloads/repo" -o /usr/local/bin/repo
           sudo chmod a+x /usr/local/bin/repo
           repo --version || true
 
@@ -168,6 +168,13 @@ jobs:
           if [ "$(head -c 8 recovery.img)" != "ANDROID!" ]; then
             echo "::error::recovery.img 가 안드로이드 부트 이미지가 아닙니다."
             head -c 300 recovery.img
+            exit 1
+          fi
+          actual_size=$(stat -c '%s' recovery.img)
+          actual_sha256=$(sha256sum recovery.img | cut -d ' ' -f 1)
+          if [ "$actual_size" != "23753248" ] || \
+             [ "$actual_sha256" != "2f9d11fe10e12953486290c9a388ebc23a257d71b167930671159387719cb0ed" ]; then
+            echo "::error::입력 이미지가 검증된 SM-T583 AP stock recovery와 일치하지 않습니다."
             exit 1
           fi
 
@@ -356,8 +363,8 @@ jobs:
           {
             echo 'TARGET_RECOVERY_PIXEL_FORMAT := "ABGR_8888"'
             echo 'TW_BRIGHTNESS_PATH := "/sys/devices/14800000.dsim/backlight/panel/brightness"'
-            echo "TW_MAX_BRIGHTNESS := 150"
-            echo "TW_DEFAULT_BRIGHTNESS := 120"
+            echo "TW_MAX_BRIGHTNESS := 306"
+            echo "TW_DEFAULT_BRIGHTNESS := 200"
             echo "TW_NO_SCREEN_BLANK := true"
             echo "TW_NO_SCREEN_TIMEOUT := true"
             echo "RECOVERY_GRAPHICS_FORCE_USE_LINELENGTH := true"
