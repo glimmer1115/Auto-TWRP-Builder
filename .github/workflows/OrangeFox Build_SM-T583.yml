@@ -366,6 +366,18 @@ jobs:
           find "$ROOT" -type f -printf '%s %p\n' | sort -rn | head -100 | \
             awk '{size=$1; sub(/^[^ ]+ /, ""); printf "%.2f MiB %s\n", size/1048576, $0}' || true
 
+      - name: Diagnose ramdisk (read-only)
+        id: diagnose_ramdisk
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        continue-on-error: true
+        working-directory: ${{ env.WS }}
+        run: |
+          set -euo pipefail
+          echo "=== Running read-only ramdisk diagnostic ==="
+          python3 "${GITHUB_WORKSPACE}/scripts/diagnose_ramdisk.py" \
+            out/target/product/gtaxladwifikx/recovery.img \
+            --limit 14680064
+
       - name: Package OrangeFox recovery image
         id: package_image
         if: steps.build.outcome == 'success'
@@ -438,63 +450,59 @@ jobs:
           set -euo pipefail
           REPORT="${GITHUB_WORKSPACE}/ramdisk-analysis.json"
           if [ ! -f "$REPORT" ]; then
-          echo "::warning::ramdisk-analysis.json not found"
-          exit 0
+            echo "::warning::ramdisk-analysis.json not found"
+            exit 0
           fi
           python3 - "$REPORT" <<'PY'
           import json
           import sys
           from pathlib import Path
-
           report = Path(sys.argv[1])
           try:
-            data = json.loads(report.read_text())
+              data = json.loads(report.read_text())
           except (OSError, json.JSONDecodeError) as exc:
-            print(f"::warning::Unable to read ramdisk analysis: {exc}")
-            raise SystemExit(0)
+              print(f"::warning::Unable to read ramdisk analysis: {exc}")
+              raise SystemExit(0)
           if not isinstance(data, dict):
-            print("::warning::ramdisk analysis has an unexpected format")
-            raise SystemExit(0)
-
+              print("::warning::ramdisk analysis has an unexpected format")
+              raise SystemExit(0)
           print("--- ramdisk analysis summary ---")
           for key in (
-            "source_ramdisk_bytes",
-            "source_cpio_bytes",
-            "packaged_cpio_bytes",
-            "packaged_ramdisk_bytes",
-            "ramdisk_limit_bytes",
-            "headroom_bytes",
-            "excess_bytes",
+              "source_ramdisk_bytes",
+              "source_cpio_bytes",
+              "packaged_cpio_bytes",
+              "packaged_ramdisk_bytes",
+              "ramdisk_limit_bytes",
+              "headroom_bytes",
+              "excess_bytes",
           ):
-            if key in data:
-              print(f"{key}: {data[key]}")
-
+              if key in data:
+                  print(f"{key}: {data[key]}")
           entries = data.get("entries", [])
           if isinstance(entries, list):
-            files = [
-              item for item in entries
-              if isinstance(item, dict) and item.get("type") == "file"
-            ]
-            print("--- top payload files ---")
-            for item in sorted(
-              files,
-              key=lambda item: int(item.get("size_bytes", 0) or 0),
-              reverse=True,
-            )[:30]:
-              print(
-                f"{item.get('size_bytes', 0)} bytes "
-                f"{item.get('path', '<unknown>')}"
-              )
-
+              files = [
+                  item for item in entries
+                  if isinstance(item, dict) and item.get("type") == "file"
+              ]
+              print("--- top payload files ---")
+              for item in sorted(
+                  files,
+                  key=lambda item: int(item.get("size_bytes", 0) or 0),
+                  reverse=True,
+              )[:30]:
+                  print(
+                      f"{item.get('size_bytes', 0)} bytes "
+                      f"{item.get('path', '<unknown>')}"
+                  )
           for key in (
-            "largest_file_single_removals",
-            "largest_file_cumulative_removals",
+              "largest_file_single_removals",
+              "largest_file_cumulative_removals",
           ):
-            items = data.get(key, [])
-            if isinstance(items, list):
-              print(f"--- {key} ---")
-              for item in items[:30]:
-                print(json.dumps(item, sort_keys=True))
+              items = data.get(key, [])
+              if isinstance(items, list):
+                  print(f"--- {key} ---")
+                  for item in items[:30]:
+                      print(json.dumps(item, sort_keys=True))
           PY
 
       - name: Collect failure diagnostics

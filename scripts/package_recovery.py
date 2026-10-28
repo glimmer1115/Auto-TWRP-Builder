@@ -13,7 +13,7 @@ PARTITION_SIZE = 39845888
 TRAILER = b"SEANDROIDENFORCE"
 BUILD_METADATA = {"ramdisk-files.txt", "ramdisk-files.sha256sum"}
 CPIO_BLOCK_SIZE = 512
-RAMDISK_LIMIT = 14680064
+RAMDISK_LIMIT = 39845888
 
 
 def parse_image(data):
@@ -49,13 +49,9 @@ def parse_image(data):
     }
 
 
-def rewrite_cpio(data, excluded_names=None, inventory=None):
-    output = bytearray()
-    offset = 0
-    removed = []
-    excluded_names = set(excluded_names or ())
-    trailer_found = False
-    while offset + 110 <= len(data):
+def iter_cpio_entries(data):
+    offset, size = 0, len(data)
+    while offset + 110 <= size:
         header = data[offset:offset + 110]
         if header[:6] not in (b"070701", b"070702"):
             raise ValueError("ramdisk is not a newc CPIO archive")
@@ -66,15 +62,46 @@ def rewrite_cpio(data, excluded_names=None, inventory=None):
             name_size = int(header[94:102], 16)
         except ValueError as exc:
             raise ValueError("invalid CPIO numeric field") from exc
-
         name_start = offset + 110
         name_end = name_start + name_size
-        if name_size < 1 or name_end > len(data) or data[name_end - 1:name_end] != b"\0":
+        if name_size < 1 or name_end > size or data[name_end - 1:name_end] != b"\0":
             raise ValueError("invalid CPIO filename")
         name_bytes = data[name_start:name_end]
-        name = name_bytes[:-1].decode("utf-8", "replace")
-        normalized_name = name[2:] if name.startswith("./") else name
-        if inventory is not None and name != "TRAILER!!!":
+        raw_name = name_bytes[:-1].decode("utf-8", "replace")
+        normalized_name = raw_name[2:] if raw_name.startswith("./") else raw_name
+        data_start = (name_end + 3) & ~3
+        data_end = data_start + file_size
+        if data_end > size:
+            raise ValueError("truncated CPIO entry: " + raw_name)
+
+        entry_data = data[data_start:data_end]
+        if raw_name == "TRAILER!!!":
+            if any(data[data_end:]):
+                raise ValueError("non-zero data follows the CPIO trailer")
+            yield (
+                raw_name, normalized_name, header, name_bytes, entry_data,
+                mode, link_count, file_size,
+            )
+            return
+
+        yield (
+            raw_name, normalized_name, header, name_bytes, entry_data,
+            mode, link_count, file_size,
+        )
+        offset = (data_end + 3) & ~3
+    raise ValueError("CPIO trailer is missing")
+
+
+def rewrite_cpio(data, excluded_names=None, inventory=None):
+    output = bytearray()
+    removed = []
+    excluded_names = set(excluded_names or ())
+    trailer_found = False
+    for (
+        raw_name, normalized_name, header, name_bytes, entry_data,
+        mode, link_count, file_size,
+    ) in iter_cpio_entries(data):
+        if inventory is not None and raw_name != "TRAILER!!!":
             file_type = stat.S_IFMT(mode)
             type_names = {
                 stat.S_IFDIR: "directory",
@@ -92,19 +119,14 @@ def rewrite_cpio(data, excluded_names=None, inventory=None):
                 "link_count": link_count,
                 "size_bytes": file_size,
             })
-        data_start = (name_end + 3) & ~3
-        data_end = data_start + file_size
-        if data_end > len(data):
-            raise ValueError("truncated CPIO entry: " + name)
 
-        if name == "TRAILER!!!":
+        if raw_name == "TRAILER!!!":
             output.extend(header)
             output.extend(name_bytes)
             output.extend(b"\0" * (-len(output) % 4))
-            output.extend(data[data_start:data_end])
+            output.extend(entry_data)
             output.extend(b"\0" * (-len(output) % 4))
             trailer_found = True
-            offset = data_end
             break
 
         if normalized_name in BUILD_METADATA or normalized_name in excluded_names:
@@ -113,14 +135,11 @@ def rewrite_cpio(data, excluded_names=None, inventory=None):
             output.extend(header)
             output.extend(name_bytes)
             output.extend(b"\0" * (-len(output) % 4))
-            output.extend(data[data_start:data_end])
+            output.extend(entry_data)
             output.extend(b"\0" * (-len(output) % 4))
-        offset = (data_end + 3) & ~3
 
     if not trailer_found:
         raise ValueError("CPIO trailer is missing")
-    if any(data[offset:]):
-        raise ValueError("non-zero data follows the CPIO trailer")
     output.extend(b"\0" * (-len(output) % CPIO_BLOCK_SIZE))
     return bytes(output), removed
 
