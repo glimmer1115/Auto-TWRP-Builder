@@ -1,7 +1,11 @@
 import argparse
 import gzip
 import hashlib
+import json
+import stat
 import struct
+from collections import defaultdict
+from pathlib import PurePosixPath
 from pathlib import Path
 
 
@@ -9,6 +13,7 @@ PARTITION_SIZE = 39845888
 TRAILER = b"SEANDROIDENFORCE"
 BUILD_METADATA = {"ramdisk-files.txt", "ramdisk-files.sha256sum"}
 CPIO_BLOCK_SIZE = 512
+RAMDISK_LIMIT = 14680064
 
 
 def parse_image(data):
@@ -44,10 +49,11 @@ def parse_image(data):
     }
 
 
-def rewrite_cpio(data):
+def rewrite_cpio(data, excluded_names=None, inventory=None):
     output = bytearray()
     offset = 0
     removed = []
+    excluded_names = set(excluded_names or ())
     trailer_found = False
     while offset + 110 <= len(data):
         header = data[offset:offset + 110]
@@ -55,6 +61,8 @@ def rewrite_cpio(data):
             raise ValueError("ramdisk is not a newc CPIO archive")
         try:
             file_size = int(header[54:62], 16)
+            mode = int(header[14:22], 16)
+            link_count = int(header[38:46], 16)
             name_size = int(header[94:102], 16)
         except ValueError as exc:
             raise ValueError("invalid CPIO numeric field") from exc
@@ -66,6 +74,24 @@ def rewrite_cpio(data):
         name_bytes = data[name_start:name_end]
         name = name_bytes[:-1].decode("utf-8", "replace")
         normalized_name = name[2:] if name.startswith("./") else name
+        if inventory is not None and name != "TRAILER!!!":
+            file_type = stat.S_IFMT(mode)
+            type_names = {
+                stat.S_IFDIR: "directory",
+                stat.S_IFREG: "file",
+                stat.S_IFLNK: "symlink",
+                stat.S_IFCHR: "character-device",
+                stat.S_IFBLK: "block-device",
+                stat.S_IFIFO: "fifo",
+                stat.S_IFSOCK: "socket",
+            }
+            inventory.append({
+                "path": normalized_name,
+                "type": type_names.get(file_type, "unknown"),
+                "mode": format(mode, "06o"),
+                "link_count": link_count,
+                "size_bytes": file_size,
+            })
         data_start = (name_end + 3) & ~3
         data_end = data_start + file_size
         if data_end > len(data):
@@ -81,7 +107,7 @@ def rewrite_cpio(data):
             offset = data_end
             break
 
-        if normalized_name in BUILD_METADATA:
+        if normalized_name in BUILD_METADATA or normalized_name in excluded_names:
             removed.append(normalized_name)
         else:
             output.extend(header)
@@ -99,20 +125,120 @@ def rewrite_cpio(data):
     return bytes(output), removed
 
 
+def compress_cpio(cpio):
+    compressed = bytearray(gzip.compress(cpio, compresslevel=9, mtime=0))
+    if compressed[:4] != b"\x1f\x8b\x08\x00":
+        raise ValueError("unexpected gzip header")
+    compressed[8] = 0
+    compressed[9] = 3
+    if gzip.decompress(compressed) != cpio:
+        raise ValueError("compressed ramdisk failed round-trip validation")
+    return bytes(compressed)
+
+
 def compress_ramdisk(blob):
     if blob.startswith(b"\x1f\x8b"):
         cpio = gzip.decompress(blob)
     else:
         cpio = blob
     rewritten, removed = rewrite_cpio(cpio)
-    compressed = bytearray(gzip.compress(rewritten, compresslevel=9, mtime=0))
-    if compressed[:4] != b"\x1f\x8b\x08\x00":
-        raise ValueError("unexpected gzip header")
-    compressed[8] = 0
-    compressed[9] = 3
-    if gzip.decompress(compressed) != rewritten:
-        raise ValueError("compressed ramdisk failed round-trip validation")
-    return bytes(compressed), len(rewritten), removed
+    compressed = compress_cpio(rewritten)
+    return compressed, len(rewritten), removed
+
+
+def analyze_ramdisk(blob, packaged_size, ramdisk_limit=RAMDISK_LIMIT, candidate_count=12):
+    cpio = gzip.decompress(blob) if blob.startswith(b"\x1f\x8b") else blob
+    entries = []
+    rewritten, removed = rewrite_cpio(cpio, inventory=entries)
+    baseline_size = len(compress_cpio(rewritten))
+    if baseline_size != packaged_size:
+        raise ValueError(
+            "analysis baseline differs from packaged ramdisk: {} != {}".format(
+                baseline_size, packaged_size
+            )
+        )
+
+    directories = defaultdict(lambda: {"entry_count": 0, "payload_bytes": 0})
+    for entry in entries:
+        path = PurePosixPath(entry["path"])
+        if entry["type"] == "directory":
+            directories[entry["path"]]
+        parent = path.parent
+        while parent.as_posix() != ".":
+            directory = directories[parent.as_posix()]
+            directory["entry_count"] += 1
+            directory["payload_bytes"] += entry["size_bytes"]
+            parent = parent.parent
+
+    candidates = []
+    seen_paths = set()
+    for entry in sorted(
+        entries,
+        key=lambda item: (-item["size_bytes"], item["path"]),
+    ):
+        if (
+            entry["type"] == "file"
+            and entry["link_count"] == 1
+            and entry["size_bytes"] > 0
+            and entry["path"] not in BUILD_METADATA
+            and entry["path"] not in seen_paths
+        ):
+            candidates.append(entry)
+            seen_paths.add(entry["path"])
+        if len(candidates) >= candidate_count:
+            break
+
+    single_removals = []
+    for entry in candidates:
+        simulated, _ = rewrite_cpio(cpio, excluded_names={entry["path"]})
+        simulated_size = len(compress_cpio(simulated))
+        single_removals.append({
+            "path": entry["path"],
+            "input_payload_bytes": entry["size_bytes"],
+            "ramdisk_size_bytes": simulated_size,
+            "reduction_bytes": baseline_size - simulated_size,
+        })
+
+    cumulative_removals = []
+    cumulative_counts = [count for count in (3, 6, 9, 12) if count <= len(candidates)]
+    if candidates and len(candidates) not in cumulative_counts:
+        cumulative_counts.append(len(candidates))
+    for count in cumulative_counts:
+        excluded = {entry["path"] for entry in candidates[:count]}
+        simulated, _ = rewrite_cpio(cpio, excluded_names=excluded)
+        simulated_size = len(compress_cpio(simulated))
+        cumulative_removals.append({
+            "largest_files_removed": count,
+            "paths": [entry["path"] for entry in candidates[:count]],
+            "ramdisk_size_bytes": simulated_size,
+            "reduction_bytes": baseline_size - simulated_size,
+            "headroom_bytes": ramdisk_limit - simulated_size,
+        })
+
+    directory_report = [
+        {"path": path, **sizes}
+        for path, sizes in sorted(directories.items())
+    ]
+    return {
+        "format_version": 1,
+        "compression": "gzip level 9, same CPIO rewrite as package_recovery.py",
+        "source_ramdisk_bytes": len(blob),
+        "source_cpio_bytes": len(cpio),
+        "packaged_cpio_bytes": len(rewritten),
+        "packaged_ramdisk_bytes": baseline_size,
+        "ramdisk_limit_bytes": ramdisk_limit,
+        "headroom_bytes": ramdisk_limit - baseline_size,
+        "excess_bytes": max(0, baseline_size - ramdisk_limit),
+        "removed_build_metadata": removed,
+        "entries": entries,
+        "directories": directory_report,
+        "simulation_note": (
+            "Hypothetical size-only simulations; no files were removed. "
+            "They do not establish runtime dependency safety."
+        ),
+        "largest_file_single_removals": single_removals,
+        "largest_file_cumulative_removals": cumulative_removals,
+    }
 
 
 def package(stock_data, built_data):
@@ -174,14 +300,26 @@ def main():
     parser.add_argument("--stock", required=True, type=Path)
     parser.add_argument("--built", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--analysis-report", type=Path)
+    parser.add_argument("--ramdisk-limit", type=int, default=RAMDISK_LIMIT)
     args = parser.parse_args()
 
     stock_data = args.stock.read_bytes()
     stock_image = parse_image(stock_data)
     stock_footer_size = max(0, len(stock_data) - stock_image["component_end"] - len(TRAILER))
-    image, ramdisk_size, cpio_size, removed = package(stock_data, args.built.read_bytes())
+    built_data = args.built.read_bytes()
+    image, ramdisk_size, cpio_size, removed = package(stock_data, built_data)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_bytes(image)
+    if args.analysis_report:
+        built_ramdisk = parse_image(built_data)["components"]["ramdisk"]
+        report = analyze_ramdisk(built_ramdisk, ramdisk_size, args.ramdisk_limit)
+        args.analysis_report.parent.mkdir(parents=True, exist_ok=True)
+        args.analysis_report.write_text(
+            json.dumps(report, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        print("Ramdisk analysis report:", args.analysis_report)
     print("Final image bytes:", len(image))
     print("Stock SignerVer02 footer excluded bytes:", stock_footer_size)
     print("Ramdisk compressed bytes:", ramdisk_size)

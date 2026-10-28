@@ -356,7 +356,9 @@ jobs:
           python3 "${GITHUB_WORKSPACE}/scripts/package_recovery.py" \
             --stock "${WS}/recovery.img" \
             --built recovery-built.img \
-            --output recovery.img
+            --output recovery.img \
+            --analysis-report "${GITHUB_WORKSPACE}/ramdisk-analysis.json" \
+            --ramdisk-limit 14680064
 
       - name: Validate final ramdisk size
         id: ramdisk_limit
@@ -450,6 +452,7 @@ jobs:
           path: |
             orangefox-build.log
             orangefox-manifest.xml
+            ramdisk-analysis.json
             mem-monitor.log
             diagnostics.log
             soong.log
