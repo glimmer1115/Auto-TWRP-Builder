@@ -1,12 +1,21 @@
 import gzip
 import hashlib
+import lzma
 import stat
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from package_recovery import analyze_ramdisk, compress_cpio, rewrite_cpio
+from package_recovery import (
+    analyze_ramdisk,
+    compressed_breakdown,
+    compress_cpio,
+    decompress_ramdisk,
+    rewrite_cpio,
+)
+import package_recovery
 from slim_recovery import find_referenced_fonts, should_remove
 
 
@@ -81,6 +90,33 @@ class RamdiskAnalysisTests(unittest.TestCase):
         self.assertGreater(simulation["reduction_bytes"], 0)
         self.assertIn("system/bin/large", report["largest_file_cumulative_removals"][0]["paths"])
         self.assertEqual(cpio, cpio_archive(entries))
+
+    def test_compressed_breakdown_ranks_files_and_omits_build_metadata(self):
+        entries = [
+            ("large.bin", stat.S_IFREG | 0o644, b"A" * 4096, 1, 1),
+            ("small.bin", stat.S_IFREG | 0o644, b"small", 2, 1),
+            ("ramdisk-files.txt", stat.S_IFREG | 0o644, b"metadata" * 100, 3, 1),
+        ]
+        report = compressed_breakdown(cpio_archive(entries))
+
+        self.assertEqual([row["path"] for row in report], ["large.bin", "small.bin"])
+        self.assertGreater(report[0]["gz_est"], report[1]["gz_est"])
+
+    def test_xz_compression_and_ramdisk_decompression_round_trip(self):
+        cpio = cpio_archive([
+            ("file", stat.S_IFREG | 0o644, b"payload", 1, 1),
+        ])
+        with patch.object(package_recovery, "RAMDISK_COMPRESSION", "xz"):
+            compressed = compress_cpio(cpio)
+            rewritten, _ = rewrite_cpio(cpio)
+            report = analyze_ramdisk(
+                lzma.compress(cpio), len(compress_cpio(rewritten))
+            )
+
+        self.assertTrue(compressed.startswith(b"\xfd7zXZ\x00"))
+        self.assertEqual(decompress_ramdisk(compressed), cpio)
+        self.assertEqual(report["compression"], "xz LZMA2 preset 9 extreme, CRC32, 8 MiB dictionary")
+        self.assertEqual(decompress_ramdisk(gzip.compress(cpio)), cpio)
 
 
 class RecoverySlimmingTests(unittest.TestCase):

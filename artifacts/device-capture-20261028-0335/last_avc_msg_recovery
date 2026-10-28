@@ -1,0 +1,10 @@
+type=2000 audit(0.929:1): initialized
+type=1800 audit(1793125959.259:12):  pid=1 gpid=1 subj=kernel op="appraise_data" cint=0x0 pint=0x0 cause="bad-fs" comm="swapper/0" name="/init" dev="rootfs" ino=7593 res=-524
+type=1800 audit(1793125959.259:13):  pid=1 gpid=1 subj=kernel op="bprm-check" cint=0x0 pint=0x0 cause="reset-integrity" comm="swapper/0" name="/init" dev="rootfs" ino=7593 res=-524
+type=1800 audit(1793125959.259:14):  pid=1 gpid=1 subj=kernel op="appraise_data" cint=0x0 pint=0x0 cause="bad-fs" comm="init" name="/init" dev="rootfs" ino=7577 res=-524
+type=1800 audit(1793125959.259:15):  pid=1 gpid=1 subj=kernel op="bprm-check" cint=0x0 pint=0x0 cause="reset-integrity" comm="init" name="/init" dev="rootfs" ino=7577 res=-524
+type=1403 audit(1793125959.339:16): policy loaded auid=4294967295 ses=4294967295
+type=1800 audit(1793125959.349:17):  pid=1 gpid=1 subj=u:r:kernel:s0 op="bprm-check" cint=0x0 pint=0x0 cause="reset-integrity" comm="init" name="/init" dev="rootfs" ino=7577 res=0
+type=1800 audit(1793125960.019:18):  pid=1812 gpid=1812 subj=u:r:kernel:s0 op="bprm-check" cint=0x0 pint=0x0 cause="reset-integrity" comm="init" name="/init" dev="rootfs" ino=7577 res=0
+type=1800 audit(1793125961.049:19):  pid=2524 gpid=2524 subj=u:r:kernel:s0 op="appraise_data" cint=0x0 pint=0x0 cause="bad-fs" comm="init" name="/sbin/recovery" dev="rootfs" ino=7777 res=-524
+type=1800 audit(1793125961.049:20):  pid=2524 gpid=2524 subj=u:r:kernel:s0 op="bprm-check" cint=0x0 pint=0x0 cause="reset-integrity" comm="init" name="/sbin/recovery" dev="rootfs" ino=7777 res=-524

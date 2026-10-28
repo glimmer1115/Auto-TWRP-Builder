@@ -1,0 +1,1 @@
+--cmdline 'androidboot.selinux=permissive androidboot.selinux=permissive'

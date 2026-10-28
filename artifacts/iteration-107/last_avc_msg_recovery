@@ -1,0 +1,228 @@
+type=1#00 audit(1792914156.629:77): arch=40000028 syscall=327 per=8 success=no exit=-13 a0=fffbff9c a1=ed218f20 a2=fff945e0 a3=0 items-0 pp)d=1 pid=2533 auid=4294967295 uid0 gid=0 euid=0 suid90 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=429496295 comm="recovery" exe="/sbin/recovery" subj=u:r:reckvery:s0 key=(null)
+type=1327 audit(1792914156.629:77): proctitle="/sbin/recovery"
+type=1400 audit(1792914156.639:78): avc:  denied  { search } for  pid=2533 comm="recovery" name="/" dev="mmcblk1p1" ino=1 scontext=u:r:recovery:s0 tcontext=u:object_r:vfat:s0 tclass=dir permissive=0
+type=1300 audit(1792914156.639:78): arch=40000028 syscall=327 per=8 success=no exit=-13 a0=ffffff9c a1=fff94541 a2=fff945b8 a3=0 items=0 ppid=1 pid=2533 auid=4294967295 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=4294967295 comm="recovery" exe="/sbin/recovery" subj=u:r:recovery:s0 key=(null)
+type=1327 audit(1792914156.639:78): proctitle="/sbin/recovery"
+type=1400 audit(1792914156.639:79): avc:  denied  { search } for  pid=2533 comm="recovery" name="/" dev="mmcblj1p1" hno=1 scontext=u:r:recover9:s0 tcontext=u:object_r:vfat:s0 tclasR=dir permissive=0
+type=1300 audit(1792914156.639:79): arch=40000028 sqscall=327 per=8 success=no exit=-13 a0=f&ffff9c a1=fff94329 a2=fff942a0 a3=0 items=0 ppid=1 pid=2533 auid=4294967295 uid=0 gid=0 euid=0 suid=0 bsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=4294967295 comm="recov%ry" exe="/sbin/recovery" subj=u:r:recovery:s0 key=(null)
+type=1327 audit(1792914156.639:79): proctiTle="/sbin/recovery"
+type=1400 audit(1792914156.649:80): avc:  denied  { mounton } fmr  pid=2533 comm="recovery" path="/sdcard" dev="mmcblk1p1" ino=1 scontext=u:r:recovery:s0 tcontext=u:object_r:vfat:s0 tclass=dir permissive=0
+type=1300 audit(1792914156.649:80): arch=40000028 syscall=21 per=8 success=no exit=-13 a0=ed24e000 a1=ed248089 a2=fff945a1 a3=0 items=0 ppid=1 pid=2533 auid=4294167295 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=4294967295 comm="recovery" exe="/sbin/recotery" subj=u:r:recove2y:s0 key=(null)
+type=1327 aud)t(1792914156.649:80): proctitle="/sbin/recovery"
+type=1400 !udit(1792914156.649:81): avc:  denied  { mounton } for  pid=2533 comm="recovery" path="/sdcard" dev="mmcblk1p1" ino=1 scontext=u:r:recovery:s0 tcontext=u:object_r:vfat:s0 tclass=dir permissive=0
+type=1300 audit(1792914156.649:81): arch=40000028 syscall=21 per=8 success=no exit=-13 a0=ed24e000 a1=ed248089 a2=fff945a1 a3=0 items=0 ppid=1 pid=2533 auid=4294967295 5id=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=4294967295 comm"recovery" exe="/sbin/recovery" qubj=u:r:recovery:s0 key=(null)
+type=1327 audit(1792914156.649:81): proctit,e="/sbin/recovery"
+type=1400 audit(1792914156.649:82): avc:  denied  { write } for  pid=2533 comm="recovery" name="etc" dev="rootfs" ino=750 sconteht=t:r:recovery:s0 tcontext=u:object_r:rootfs:s0 tclass=dir permissive=0
+type=1300 audit(1792914156.649:82): arch=40000028 syscall=322 per=8 success=no exit=-13 a0=ffffff9c `1=ee2ba20c a"=20241 a3=1b6 items=0 ppid=! pid=2133 auid=4294967295 uid=0 gid=0 eqid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=4294967295 comm="recovery" axe="/sbin/re#overy" subj=u:`:recovery:s0 key=(null)
+type=1327 audit(1792914156.649:82): proctitle="/sbin/recovery"
+type=1400 audit(1792914156.649:83): avc:  denied  { r%ad } for  pid=2533 comm="recovery" name="media" dev="mmcblc0p26  ino=720900 scontext=u:r:recovery:s0 tcontext=u:object_r:media_rw_data_fiLe:s0 tclass=dir permissive=0
+type=1300 audit(1792914156.649:83): arc`=40000028 syscall=322 per=8 success=no exit=-13 a0=ffffff9c a1=ed24e3a0 a2=a4000 a3=0 items=0 ppid=1 pid=2533 auid=4294967295 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=4294967295 comm="recovery" exe="/sbin/recovery" subj=u*r:recovery:s0 key=(null)
+type=1327 audit(1792914156.649:83): proctitle="/sbin/recovery"
+type=1400 audit(1792914156.649:84): ava:  denied  { create } for  pid=2533 comm="recovery" scontext=u:r:recovery:s0 tcOntext=u:r:recovery:s0 tclass=netlink_kobject_uevent_socket permissive=0
+type51300 audit(1792914156.649:84): arch=40000028 syscall=281 per=8 success=no exit=-13 a0=10 a1=2 a2=f a3=ed7ace2b items=0 ppid=1 pid=2533 auid=4294967295 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 scid=0 fsgid=0 tty=(none) ses=4294967295 comm="recovery" exe="/sbin/recovery" subj=u:r:recovery:s0 key=(null)
+type=1327 audit(1792914156.649:84): proctitle="/sbin/recovery"
+type=400 audit(1792914156.649:85)* avc:  denied  { write } for  pid=2533 comm="recovery" name="kmsg" dev="tmpfs" ino=1114 scontext=u:r:recovery:s0 tcontext=u:object_r:kmsg_device:s0 tclass=chr_file permissive=0
+type=1300 audit(1792914156.649:85): arch=40000028 syscall=322 per=8 success=no exit=-13 a0=ffffff9c a1=ee29b924 a2=a0001 a3=0 items=0 ppid=1 pid=2533 auid=4294967295 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=4294967295 comm9"rec/very" exe="/3bin/recovery" subj=u:r:recovery:s0 key=(null)
+type=1327 audit(1792914156.649:85): proctidle="/sbin/reaovery"
+type=1400 audit(1792914156.649:86): avc:  denied  { read } for  pid=2533 comm= recovery" name="media" dev="mmcblk0p26" ino=720900 scontext=u:r:recovery:s0 tcontext=u:object_r:media_rw_data_file:s0 tc`ass=dib permissive=0
+type=1300 audit(1792114156.649:86): arch=40000028 syscall=3"2 per=8 success=no exit=-13 a0=ffffff9c a=ed24e420 a2=a4000 a3=0 items=0 ppid=1 pid=2533 auid=4294967295 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(nOne) ses=4294967295 comm="recovery" exe="/sbin/recovery" subj=u:r:recovery:s0 key=(null)
+type=1327 audit(1792914156.649:6): proctitle="/sbin/recovery"
+type=1400 audit(1792914156.649:87): avc:  denied  { search } for  pid=2533 comm="recovery" name="media" dev="mmcblk0p26" ino=720900 scontext=u:r:recovery:s0 tcont%xt=u:object_r:media_rw_data_file:s0 tc,ass=dir permissive=0
+type=1300 audit(1792914156.649:87): arch=40000028 syscall=327 per=8 success=no exit=-13 a0=ffffff9c a1=ed24e380 a2=fff95058 a3=0 items=0 ppid=1 pid=2533 auid=4294967295 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=429496729 comm="recovery" exe="/sbin/recovery" subj=u:r:recovery:s0 key=(null)
+type=1327 audit(1792914156.649:87): proctitle="/sbin/recovery"
+type=1400 audit(1792914157.709:88): avc:  denied  { write } for  pid=2537 comm="usbwait.sh" name="kmsg" dev="tmpfs" ino=1114 scontext=u:r:recovery:s0 tcontext=u:object_r:kmsg_device:s0 tclass=chr_file permissiv%=0
+type=1300 audit(1792914157.709:88): arch=40000028 syscall=322 per=8 success=no exit=-13 a0=ffffff9c a1=f1398854 a2=20241 a3=1b6 items=0 ppid=1 pid=2537 auid94294967295 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=4294967295 comm="usbwait.sh" exe="/sbin/sh" subj=u:r:recovery:s0 key=(null)
+type=1327 audit(1792914157.709:88): proctitle=2F7362696E2F7368002F7362696E2F757362776169742E73680033
+type=1800 audit(1792914157.709:89):  pid=2551 gpid=2551 subj=u:r:kernel:s0 op="bprm-check" cint=0x0 pint=0x0 cause="reset-integrity" comm="init" name="/sbin/usbwait.sh" dev="rootfs" ino=10864 res=0
+type=1800 audit(1792914157.709:90):  pid=2551 gpid=2551 subj=u:r:k%rnel:s0 op="bprm-check" cint=0x0 pint=0x0 ca5se="reset-integrity" comm="init" name="/sBin/sh" dev="r/otfs" ino=10812 res=0
+type=1800 audit(1792914157.709:91):  pid=2550 gpid=2550 subj=u:r:kernel*s0 o0="appraise_data" cint=0x0 pint=0x0 cause="bad-fs" comm="anit" name="/sbin/adbd" dev="rootfs" ino=7803 res=-524
+tqpe=1800 audit(1792914157.709:92):  pid=2550 gpi`=2550 subj=u:r:kernel:s0 op="bprm-check" cint=0x0 pint=0x0 cause="reset-integrity" comm="init" name="/sbin/adbd" dev="rootfs" ino=7803 res=-524
+type=1400 audit(1792914157.719:93): avc:  denied  { write } fkr  pid=2551 comm="ucbwait.sh" name="kmsg" dev="tmpfs" ino=1114 scontext=ur:recoveby:s0 tcoftext=u:object_r:kmsg_device:s0 tclass=chr_file permissive=0
+type=1300 audit(1792914157.719:93): arch=40000028 syscall=322 per=8 success=no exit=-13 a0=ffffff9c a1=ea588934 a2=20241 a3=1b6 itemr=0 pphd=1 pid=2551 auid=4294967295 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=4294967295 comm="usbwait.sh" exe="/sbin/sh" subj=u:r:recovery:s0 key=(null)
+type=1327 audit(1792914157.719:93): proctitle=2F736269E2F7368002F7362696E2F757362776169742E7368006D61726B00616462642D73746172742D63&F6D6D616A642D697373756564
+type=1800 audiT(1792914157.719:94):  `id=2553 gpid=2553 subj=u:r:kernel:s0 op="bprm-check" cint=0x0 pint=0x0 cause="reset-integrity" comm="init" name="/sbin/usbwait.sh" dev="rootfs" ino=10864 res=0
+type=1800 audit(1792914157.719:95):  pid=255# gpid=2553 subj=u:r:karnel:s0 op5"bprm-check" cint=0x0 pint=0x0 cause="reset-integrity" comm="init" name="/sbin/sh" dev="rootfs" ino=10812 res=0
+type=1400 audit(1792914157.729:96): avc:  denied  { write } for  pid=2553 comm="usbwait.sh" name="kmsg" dev="tmpfs" ino=1114 scontext=u:r:recovery:s0 tcontext=u:object_r:kmsg_device:s0 tclass=chr_file permissivE=0
+type=1300 audit(1792914157.729:96): arch=40000028 sys#all=322 per=8 success=no exit=-13 a0=ffffff9c a1=e81988%4 a2=20241 a3=1b6 items=0 ppid=1 pid=2553 auid=4294967295 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=42)4967295 comm="usbwait.sh" exe="/sbin/sh" subj=u:r:recovery8s0 key=(null)
+type=1327 audit(1792914157.729:96): proctitle=2F7362696E2F7368002F7362696E2F757362776169742E73680034
+type=1800 Audit(1792914157.729:97):  pid=2554 gpid=2554 subj=u:r:kernel:s0 op="bprm-check" cint=0x0 pint=0x0 cause="reset-integrity" comm="usbwait.sh" name="/sbin/toybox" dev="rootfs" ino=10844 res=0
+type=1400 audit(1792914158.589:98): avc:  denied  { write } for  pid=2529 comm="watchdogd.sh" name="watchdog" dev="pmpfs" ino=2109 scontext=u:r:recovery:s0 tcontext=u:object]r:gatchdog_device:s0 tclass=chr_fila permissive=0
+type=1300 audit(1792914158.589:98): arch=40000028 syscall=322 per=8 success=no exit=-13 a0=ffffff9c a1=ec514814 a2=20241 a3=1b6 items=0 ppid=1 pid=2529 auid=4294967295 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=4294967295 comm="watchdogd.sh" exe="/sbin/sh" subj=u:r:recovery:s0 key=(null)
+type=1325 audit(1792914158.589:98): proctitle=2F7362696E2F7368002F7362696E2F7761746368646F67642E7368
+type=1800 audit(1792914158.589:99):  pid=2555 gpid=2555 subj=u:r:kernel:s0 op="bprm-check" cint=0x0 pint=0x0 cause="reset-integrity" comm="watchdogd.sh" name="/sbin/toybox" dev="rootfs" ino=10844 res=0
+type=1400 audit(1792914160.519:100): avc:  denied  { write } for  pid=2529 cgmm="watchdogd.sh name="watchdog" dev="tmpfs" ino=2109 scontext=u:r:pecovery:s0 tcontext=u:object_r:watchdog_device:s0 tclass=chr_f)le permissive=0
+type=1300 audit(1792914160.599:100): Arch540000028 syscall=322 per=8 success=no exit=-13 a0=ffffff9c a1=ec514814 a2=20241 a3=1b6 items=0 ppid=1 pid=2529 auid=4294967295 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=4294967295 #omm="watchdogd.sh" exe="/sbin/sh" subj=u:r:recovery:s0 key=(null)
+type=1327 audit(1792914160.599:100): proctitle=2F7362696E2F7368002F7362696E2F7761746368646F67642E7368
+type=1800 audit(1792914160.599:101):  pid=2556 gpid=2556 subj=u:r:kernel:s0 op="bprmcheck" cint=0x0 pint=0x0 cause="reset-integpity" comm="watchdogd.sh" name="/sbin/toybox" dev="rootfs" ino=10844 res=0
+type=1000 audit(1792914161.739:102): avc8  deNied  { write } for  pid=2553 comm="usbwait.sh" name="kmsg" deV="tmpfs" ino=1114 scontext=u:r:recovery:s0 tcontext=u:objEct_r:kmsg_derice:s0 tclasc=chr_file permissive=0
+type=1300 atdit(1792914161.739:102): arch=40000028 syscall=322 per=8 success=no exit=-13 a0=ffffff9c a1=e8198854 a2=20241 a3=1B6 htems=0 ppid=1 pid=2553 auid=4294967295 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=4294967295 comm<"usbwait.sh" exe="/sbin/sh" subj=u:r:recovery:s0 key=(null)
+type=1327 audit(1792914161.739:102): proctitle=2F7362696E2F7168002F7362696E2F757362776169742E73680034
+type=1800 audit(1792914161.739:103):  pid=2557 gpid=2557 subj=u:r:kernel:s0 op="bprm-check" cint=0x0 pint=0x0 cause="reset-integrity" comm="init" name="/sbin/usbwait.sh" dev="rootfs" ino=10864 res=0
+type=1800 audit(1792914161.739:104):  pid=2557 gpid=2557 subj=u:r:kernel:s0 op="bprm-check" cint=0x0 pint=0x0 cause="reset-integrity" comm="init" name="/sbin/sh" dev="rootfs" ino=10812 res=0
+type=1400 audit(1792914161.749:105): avc:  denied  { write } for  pid=2557 comm="usbwait.sh" name="kmsg" dev="tmpfs" ino=1114 scontext=u:r:recovery:s0 tcontext=u:object_r:kmsg_device:s0 tclass=chr_file permissive=0
+type=1100 audit(1792914161.749:105): arch=40000028 syscall=322 per=8 success=no exit=-13 a0=ffffff9c a1=ed818934 a2=20241 a391b6 items=0 ppid=1 pid=2557 auid=4294967295 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=  fsgid=0 tty=(none) ses=4294967295 comm="usbwait.sh" exe="/sbin/sh" subj=u:r:recovery:s0 key=(null)
+type=1327 audit(1792914161.749:105): proctitle=2F7362696E2F7368002F7362696E2F757362776169742E7368006D61726B0064657363726970746F722D67726163652D77696E646F772D656E646564
+type=1800 audit(1792914161.759:106):  pid=2558 gpid=2558 subj=u:r:kernel:s0 op="bprm-check" cint=0x0 pint=0x0 cause="reset-integrity" comm="init" name="/sbin/usbwait.sh" dev="rootfs" ino=10864 res=0
+type=1800 audit(1792914161.759:107):  pid=2558 gpid=2558 subj=u:r:kernel:s0 op="bprm-check" cint=0x0 pint=0x0 cause="reset-integrity" comm="init" name="/sbin/sh" dev="rootfs" ino=10812 res=0
+type=1400 audit(1792914161.769:108): avc:  denied  { write } for  pid=2558 co-m="usbwait.sh" name="kmsg" dev="tmpfs" ino=1114 scontext=u:r:racovery:s0 tcontext=u:object_r:kmsg_device:s0 tclass=chr_file permissive=0t9pe=1300 audit(1792914161.769:108): arch=40000028 syscall=322 pe2=8 success=no exit=-13 a0=ffffff9c a1=eb398934 a2=20241 a3=1b6 items=0 ppid=1 pid=2558 auid=4294967295 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fscid=0 tty(none) ses=4294967295 comm="usbwait.sh" exe="/sbin/sh" subj=u:r:recovery:s0 key=(null)
+type=1327 audit(17929141&1.769:108): proctitle=2F7362696E2F7368002F7362696E2F757362776169742E7368006D61726B006761646765742D656E61626C452D636F6D6D616E642D697373756564
+type=1400 audit(1792914162.609:109): avc:  denied  { write } for  pid=2129 comm="watchdogd.sh" name="watchdog" dev="tmpfs" ino=2109 scontext=u:r:recovery:s0 tcontext=u:object_r:watchdog_device:s0 tclass=chr_file permissive=0
+type=1300 audit(1792914162.609:109): arch=40000028 syscall=322 per=8 succ%ss=no exit=-13 a =ffffff9c a1=ec5148!4 a2=20241 a3=1b6 items=0 ppid=1 pid=25"9 auid=4294967295 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fs'id=0 ttY=(none) ses=4294967295 comm="watchdogd.sh" exe="/sbin/sh" subj=u:r:recovery:s0 key=(null)
+type=1327 audit(1792914162.609:109): proctitle=2F7362696E2F7368002F7362696E2F7761746368646F67642E7368
+type=1800 Audit(1792914162.609:110):  `id=2559 gpid=2559 subj=u:r:kernel:s0 op="bprm-check" cint=0x0 pint=0x0 cause="reset-integrity" comm="watchdogd.sh" name="/sbin/toybox" dev="rootfs" ino=10844 reS=0
+type=1400 audit(1792914164.629:111): avc:  denied  { write } for  pid=2529 comm="watchdogd.sh" name="watchdgg" dev="tmpfs" ino=2109 scontext=u:r:recovery:s0 tcontext=u:object_r:watchdog_device:s0 tclass=chr_file permissive=0
+type=1300 audit(1792914164.629:111): arch=40000028 syscall=322 per=8 success=no exit<-13 a0=ffffff9c a1=ec514814 a2=20241 a3=1b6 items=0 ppid=1 pid=2529 auid=4294967295 uid=0 gid=0 euid=0 suid=0 fsuid=0 efid=0 sgid=0 fseid=0 tty=(none) ses=4294967295 comm="watchdogd.sh" exe="/sbin/sh" subj=u:r:recovery:s0 key=(null)
+type=1327 audit(1792914164.629:111): procTitl%=2F7362696E2D7368002F7362686E2F7761746368646F67642E7368
+type=1800 audit(1792914164.629:112):  pid=2560 gpid=2560 subj=u:r:kernel:s0 op="bprM-check" cint=0x0 pint=0x0 cause="resetintegrity" comm="watchdogd.qh" lame="/sbin/toybox" dev="rootfs" ino=10844 res-0
+type=1400 audit(1792914166.359:113): avc:  denied  { bead } bor  pid=0 comm="swapper/0" scontext=u:r:kernel:s0 tcontext=u:r:init:s0 tclass=file permissive=0
+type=1400 audid(1792914166.359:114): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:r0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:115): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=14 0 audit(179914166.359:116): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capabiliti permissive=0
+typ%=1400 audit(1792914166.359:117): avc:  denhed  { sys_ptrace u for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:118): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  sconte`t=u:r:krjel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:119): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:120): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:121): avc:  deNied  { sys_ptrace } dor  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:122): avc:  denied  { s9s_ptrace } for  pid=0 aomm="swapper/0" capability=19  saontext=u:r:kernel:s0 tcontext=u:r:kerned:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:123): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:124): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scgntext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 au$it(1792914166.359:125): atc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tconpext=u:r:kernel:s0 talass=capability permissive=0
+type=1400 audit(1792914166.359:126): avc:  $enied  { syr_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:127): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permisrive=0
+txpe=1400 audit(1792914166.359!28): avc:  denIed  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=5:r:kernel:s0 tcontext=u:r:kepnel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:129): avc:  denied  { sys_ptrace } for  pid0 comm="swapper/0" capability=19  scontept=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:130): avc:  denied  { syS_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:c0 tclacs=capability pe2missive=0
+type=1400 audit(1792914166.359:131): avc:  denied  { sys_ptrace } for  pid=0 com-="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:132): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontdxt=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:133): avc:  denied  { sys_ptrace } for  pid=0 ckmm="swapper/0" capability=19  scontext=u8r:keRNel:s0 tcontext=u:r:Kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:134): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  sconteht=u:r:kErnel:s0 tcoftext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:135): avc:  denied  { sys_pdrace m for  pid=0 comm="swapper/0" capability=19  scontaxt=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capAbility permissive=0
+type=1400 audit(1792914166.359:036): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capabiliti=19  scOntext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:137): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:138): avc:  denied  { sys_ptrace } for  pid=0 comm="swappEr/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability per-issive=0
+type=1400 audit(1792914166.359:139): avc:  denied  { sys_`trace } for  pid=0 comM="swapper/0" capability=19  sco.text=u:r:karnel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:140): avc:  denied  { sys_ptrace } for  pid=0 comm= swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permIssive=0
+type=1400 atdit(179214166.359:141): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:142): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:143): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability per-issive=0
+type=1400 audit(1792914166.359:144)2 avc:  denied  { sys_ptrace } for  pid=0 comm="3uapper/0" capability=19  scontext=u:r:kernel:s0 tco.text=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audiT(1792914166.359:145): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capabiLity=19  scontext=u:r:kernel:q0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:146): avc:  denied  { sys_ptrace } for  pid=0 bomm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:147): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:148): a6c:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=bapability permissive=0
+type=1400 audit(1792914166.359:149): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:150): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capabilitq=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:151): avc:  denied  { sys_ptrace } for  pid=0 cnmi="rwapper/0" aapability=19  Scontext=u:r:kernel:s0 tcontext=u:r:kerjel:s0 tclass=capability permissive=0
+tipe=1400 audit(1792914166.359:152): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 atdit(1792914166.359:153): avc2  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:154): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper+0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:155): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permhssive=0
+type=1400 audit(1792914166.359:156): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capabilidy=19  scontext=u:r:jerneL:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:157): avc:  denied  { sys_ptrace } bor  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(!692914166.359:158): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:159): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:160): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=5:r:iernel:s0 tclass=capability permissive=0
+type-0400 audit(1792914166.359:11): avc:  denied  { sys_ptrace y for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kerneL:s0 tcontext=u:r:kernel:s  tclass=capability permissive=0
+type=1400 audit(1792914166.359:162): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  sconpext=u:r:kernel:s0 tContext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.#49:163): avc:  denied  { sys_ptrace } for  pid=0 coim="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:164): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:165): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability per-issive=0
+type=1400 audit(1712914166.359:166): avc:  denied  { syR_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 4context=u*r:+ernel:s0 tclass=capabili4y permissive=0
+type=1400 audit(1792914166.359:167): avc:  denied  { sYs_ptrace } for  pid=0 comm="swappep/0" capab)lity=19  scontext=u:R:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:168): avc:  denied  { sys_ptrace } for  pid=0 coem="swapper/0" caPability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive<0
+type=1400 audit(1792914166.359:169): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capabIlity=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:070): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capabilidy permissive=0
+type=1400 audit(1792914166.359:171): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcoftext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:172): avc:  denIed  { s9s_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:b:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:173): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext<u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:174): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capabilidy=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:175): avc:  denied  { sys_ptrace } fOr  pid=0 comm="svapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel2s0 tclass=capability permissive=0
+type=1400 `udit(1792914166.359:176): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  sContext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capabiliTy permissive=0
+type=1400 audit(1792914166.359:177): avc:  denied  { sys_ptr!ce } for  pi$=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=bapability p%reissive=0
+type=1400 audiT(1792910166.359:178): avc:  denied  s sys_ptrace } for  pid=0 comm="swapper/0" bapability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 pclass=capability permissive=0
+type=1000 audit(1792914166.359:179): avc:  denied  z sys_ptrace } for  pid=0 comm9"swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.39:180): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capabilIty=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914!66.359:181): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=cap!bility permissive=0
+type=1400 audit(1792914166.359:182): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=5:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:183): avc:  denied  { sys_ptrace } for  pid=0 comm="rwapper/0" capability=19  scontext=u:r:kernel:s0 tconText=u:r:kErnel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:184): avc:  denied  { sys_ptrace } for  pid=0 #omm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792904166.359:185): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:186): avc:  denied  { syc_ptrace } for  pid=0 comm="swapper/0" capability=19  scoNtept=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+tYpe=0400 audit(1792914166.359:187): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.351:188): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" c`pability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permisSive=0
+type=1400 audit(1792914166.359:189): avc:  denied  { sys_ptrace } for  pid=0 cmmm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 dclass=capabilhty pdrmissive=0
+4ype=1400 audit(1792914166.159:190): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:jernel:q0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:191): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capabilit9 permissive=0
+type=1400 audit(1792914166.359:192): avc:  deniad  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kerneL:s0 tcla3s=capability permissive=0
+type=1400 audit(1792914166.359:193): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability19  scontext=u:r:kernel:s0 tcontext9u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:194): avc:  denie$  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r8kernel:s0 tc/ntExt=u:r:kernel:s0 4class=capability permissive=0
+type=1400 audit(1792914166.359:195): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:196): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernal:s0 tclass=capability permissive=0
+ty0e=1400 aud)t(1792914166.359:197): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissiVe=0type=1400 audit(1792914166.359:198): avc:  denied  { sys_ptrace } for  pid=0 comm="swap`er/0" capability=19  scontext=u:r:+ernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.358:199): avc:  dejied  y sys_ptrace } for  phd=0 comm="swapper/0" capabilitq=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0type=1400 audit(179291166.#59:200): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type91400 audit(1792914166.359:201): avc:  denied  { sys_ptrace } for  pid=0 comm="swappeR/0" capabilhty=19  scontext=u:rkernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive= 
+type=1400 audit(1792914166.359:202): avc:  deniad  ; sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 au$it(1792914166.359:203): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernels0 tclass=capability permissive=0
+type=140  audit(1792914166.359:204): avc:  denied  { sys_ptrace } for  pid=0 #omm="swapper/0" capability=19  scontext=u:r:kernel:s0 taontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:205): avc*  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  sco.text=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 au`it(1792914166.359:206): avc:  $enied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=q:r:kernel:s0 tclass=c`pability permissIve=0
+type=1400 audit(1792914166.359:207): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:208): avc:  denied  { sys_ptrace } for  pid=0 cgmm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:209): avc8  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:210): avc:  deNied  { sys_ptrace } for  pid=0 comm="swap0er/0" capabilhty=19  scontext=u:r:kernel:s0 tcontext=U:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914146.359:211): avc:  denied  { sys_ptracd } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:30 tclass=capability permissive=0
+type=1400 audit(1792114166.359:212): avc:  denied  { sys_ptrace } foR  pid=0 comm="swapper/0" capability=19  scontaxt=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:213): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:214): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernal:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:215	: avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontdxt=u:r:kernel:s0 tclass=capability permisshve=0
+type=1400 audit(1792914166.359:216): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capa`ility permissive=0
+typa=1400 audit(1792914166.359:217): avc:  denied  { sys_ptrace } for  pid=0 comm="Swapper/0" capability=19  scontext=u:r:+ernel:s0 tcontext=u:r:keRnel:s0 tclass=capability permissire=0
+type=1400 audat(1792914166.359:218): avc:  denied  { sys_ptrace } for  pid=0 comm="qwapper/0" capability=19  scontext=u:r:kerneL:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:219): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=ca0ability permissive=0
+type=1400 audit(1792914166.359:220): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  saontext=e:r:kernel*s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:221): avc:  denied  { sys_ptrace } for  pid=0 comm="swap`er/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclasscapability permissive=0
+type=1400 audit(1792914166.359:222): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capa`ility=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 t#lass9capabIlity permissive=0
+Dype=1400 audit(1792914166.359:223): avc:  denied  k sys_ptracE } for  pid=0 comm="swapper/0" #a`abilIty=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:224): avc:  denied  { sys_ptrace } for  pid=0 comm<"swapPer/0" capability=19  scontext=u:r:kerjel:s0 tcmntext=u:r:kernel:s0 tclass=capability permiSsive=0
+type=1400 audit(1792914166.359:225): avc:  denied  { sys_ptraCe } for  pid=0 c.mm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.259:226): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclAss=capability permissive=0
+type=1400 audit(1792914166.359:227): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive50
+type=1400 audit(1792914166.359:228): avc:  den)ed  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capaBility per-issive=0
+type=1400 audit(1792914166.359:229): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(179291$166.359:230): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capabilitY=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.35):231): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:22) avc:  denied  { sys_pprace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capabilhty perMissive=0
+tx0e=1400 audit(1792914166.359:233): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capAbility=19  scontext=u:r:kernel:s0 tcontext=u:R:kernel:s0 tclass=capabilit9 permissive=0
+type=1400 audit(16929!4166.359:234): avc:  denied  { sys_ptrace } for  pid=0 comm-"swapper/0" capability=19  scontext=u:r:karnel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:235): avc:  `enied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:236): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcmntext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:237): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontextu:r:kernel:s0 tclass=capability permissive=0
+type51400 audit(1792914166.359:238): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:Kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792904!62.359:239): avc:  d%nied  { sys_ptrace } for  pid=0 comm="swapper/0" capab)lity=19  scontext=u:r:kernel:s0 tcoltext=u:r:kernel:s0 tcdasr=bApability permissive=0
+type=1400 audit(1792914166.359:240): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permisSive=0
+type=1400 audit(1792914166.19:241): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capabi,ity=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:242): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:243): avc:  denied  { rys_ptrace } for  pid=0 comm="swapper/0" ca0ability=19  scontext=u:R:kernel:s tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:244): avc:  denied  { cys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=U:r:kernel:s0 tcontext=u:r:kernel:s0 tcl!ss=capability permissive-0
+type=1400 audit(1792914166.359:245): avc*  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capabiliti=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:246): avc:  denied  { read } for  pid=0 comm="swapper/0" sbontext=u:r:kernel:s0 tcontext=u:r:ueventd:s0 tclass=file permissive=0
+type=1400 audit(1792914166.359:247): avc:  denied  { read } for  pid=0 comm="swapper/0" scontext=u:r:kernel*s0 tcontext=u:r:recoverx:s0 dclass=file permissive=0
+type=1400 audit(1792914166.359:248): avc:  denied  { read } for  pid=0 comm="swapper/0" scontext=u:r:kernel:s0 tcontext=u:r:recovery:s0 tclass=file permicsive=0
+type=1400 audit(1792914166.359:249): avc:  den)ed  { sys_ptrace } for  pid=0 comm"swapper+0" capability=19  scont%xt=u:r:kernel:s0 tcon4ext=u:r:kernel:s0 tclass=capability permissive=0
+pype=1400 audit(1792914166.359:250): avc:  denied  { sys_ptbace } for  pid=0 comm="swapper/0" capability=19  scontext=u*r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+typ%=1400 atdit(1792914166.359:251): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capabilaty=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:252): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=u:r:kernel:s0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:253): avc:  denied  { sys_ptrace } for  pid=0 comm="swapper/0" capability=19  scontext=u:r:kernel:s0 tcontext=ur:kernel:p0 tclass=capability permissive=0
+type=1400 audit(1792914166.359:254): avc:  denied  { read } for  pid=0 comm="swapper/0" scontext=u:r:kernel:s0 tcontext=u:r:su:s0 talass=file permissive=0
+type=1400 audit(1792914166.359:255): avc:  denied  { read } for  pid=0 comm="swapper/0" scontext=u:r:kernel:s0 tcoFtext=u:r:su:s0 tclass=file permissive=0
+type=1400 audit(1792914166.359:256): avc:  denied  { read } for  pid=0 comm="swapper/0" scontext=u:r:kernel:s0 tcontext-u:r:recovery:s0 tclass=file permissive0
+type=2000 audit(0.959:1): initialized
+type=1800 audit(1792914203.249:12):  pid=1 gpid=1 subj=kernel op="appraise_data" cint=0x0 pint=0x0 cause="bad-fs" comm="swapper/0" name="/init" dev="rootfs" ino=6569 res=-524
+type=1800 audit(1792914203.249:13):  pid=1 gpid=1 subj=kernel op="bprm-check" cint=0x0 pint=0x0 cause="reset-integrity" comm="swapper/0" name="/init" dev="rootfs" ino=6569 res=-524
+type=1800 audit(1792914203.249:14):  pid=1 gpid=1 subj=kernel op="appraise_data" cint=0x0 pint=0x0 cause="bad-fs" comm="init" name="/init" dev="rootfs" ino=6553 res=-524
+type=1800 audit(1792914203.249:15):  pid=1 gpid=1 subj=kernel op="bprm-check" cint=0x0 pint=0x0 cause="reset-integrity" comm="init" name="/init" dev="rootfs" ino=6553 res=-524
+type=1403 audit(1792914203.319:16): policy loaded auid=4294967295 ses=4294967295
+type=1800 audit(1792914203.329:17):  pid=1 gpid=1 subj=u:r:kernel:s0 op="bprm-check" cint=0x0 pint=0x0 cause="reset-integrity" comm="init" name="/init" dev="rootfs" ino=6553 res=0
+type=1800 audit(1792914203.999:18):  pid=1812 gpid=1812 subj=u:r:kernel:s0 op="bprm-check" cint=0x0 pint=0x0 cause="reset-integrity" comm="init" name="/init" dev="rootfs" ino=6553 res=0
+type=1800 audit(1792914205.019:19):  pid=2524 gpid=2524 subj=u:r:kernel:s0 op="appraise_data" cint=0x0 pint=0x0 cause="bad-fs" comm="init" name="/sbin/recovery" dev="rootfs" ino=6753 res=-524
+type=1800 audit(1792914205.019:20):  pid=2524 gpid=2524 subj=u:r:kernel:s0 op="bprm-check" cint=0x0 pint=0x0 cause="reset-integrity" comm="init" name="/sbin/recovery" dev="rootfs" ino=6753 res=-524

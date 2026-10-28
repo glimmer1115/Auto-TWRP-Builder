@@ -1,0 +1,69 @@
+SM-T583 RECOVERY BASELINE NOTICE
+REFERENCE ONLY - DO NOT APPLY HISTORICAL PATCHES AUTOMATICALLY
+
+PURPOSE
+Use verified device inputs as the baseline. This notice is not an approved
+device configuration. Keep confirmed facts separate from hypotheses.
+
+DEVICE
+Samsung SM-T583 / Exynos 7870 / gtaxladwifikx / Wi-Fi.
+Education B2B status, bootloader unlock, and Knox FOTA removal are user-reported
+context; they do not prove recovery compatibility or explain a boot result.
+
+KNOWN-GOOD STOCK INPUT
+AP-extracted recovery.img: 23,753,248 bytes.
+SHA-256: 2F9D11FE10E12953486290C9A388EBC23A257D71B167930671159387719CB0ED
+User reports this image flashes and boots normally. Do not confuse it with the
+39,845,888-byte recovery partition dump.
+
+WHAT WENT OFF TRACK
+Separating the SM-T583 path from the different gtaxlwifi device path was
+necessary, but it did not establish a complete, reproducible SM-T583 tree.
+The workflow continued generating a tree from recovery.img and layering
+overrides and patches on it. ADB, USB, display, security, and packaging
+hypotheses accumulated without consistently linking the exact flashed image
+hash to its build and device result. Build/package success was sometimes at
+risk of being read as device validation. These are process findings, not a
+confirmed technical root cause.
+
+KNOWN RESULTS AND PROVENANCE
+TWRP Recovery ADB failure and persistent backlight were user-reported; not all
+reports are tied to a verified flashed-image hash. Root cause remains unknown.
+Actions #113 built and packaged successfully at commit 15bb40f; that does not
+prove device boot. Commit 20783d6 was not included in #113.
+The #113 artifact was named twrp-gtaxladwifikx. Its archive digest was
+sha256:1f21c86d0805b682e86710195bf8b0c90d4a21877fd85db0cecf2ebcb3b67ff2;
+this is the ZIP artifact digest, not the recovery.img digest.
+
+NEXT ANALYSIS
+Compare the known-good AP ramdisk with the exact TWRP output ramdisk. Inspect
+CPIO paths, entry types, modes, symlinks, property files, fstab, init imports,
+ro.hardware and selected device RC, and executable ABI. Keep ramdisk findings
+separate from kernel, DT, header, and package metadata. Missing TWRP-only text
+in stock is expected; do not copy init rules blindly.
+
+REQUEST MISSING INPUTS PROACTIVELY
+If the exact flashed TWRP recovery.img or TWRP-recovery.tar is unavailable,
+ask the user for it. The stock AP image is already in the workspace; do not
+ask for it again. For a full tree comparison, request the relevant
+gtaxladwifikx device-tree/DB archive and its source or build provenance.
+Record run ID and hashes where available. Do not guess from screenshots or
+artifact ZIP digest alone.
+
+BUILD AND ORANGEFOX DECISION
+Do not optimize for build count. First analyze available inputs. If TWRP remains
+unresolved after evidence-based analysis, evaluate the user's OrangeFox GitLab
+source as a fallback on the same SM-T583 baseline. Request its repository,
+branch, manifest, and device-tree source if missing. Do not blindly merge TWRP
+patches or claim OrangeFox is safer or compatible without device-specific
+evidence. No build is required merely to satisfy a target count.
+
+SESSION RULES
+Do not create per-iteration history files; update this notice only when asked.
+Keep it at C:\Auto-TWRP-Builder-New\docs\history\NOTICE.txt as a local file.
+Never commit or push it. Ask mode means analysis only. Do not modify files,
+build, flash, or dispatch workflows without explicit authorization.
+
+Old iteration files were removed from the current tree at the user's request.
+Earlier Git commits may still contain their history; repository history was
+not rewritten.

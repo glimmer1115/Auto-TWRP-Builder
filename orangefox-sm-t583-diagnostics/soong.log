@@ -1,0 +1,196 @@
+2026/10/28 08:15:02.286115 build/soong/ui/logger/logger.go:283: Command Line: 
+2026/10/28 08:15:02.286151 build/soong/ui/logger/logger.go:290:   [0] /tmp/orangefox/out/soong_ui
+2026/10/28 08:15:02.286156 build/soong/ui/logger/logger.go:290:   [1] --build-mode
+2026/10/28 08:15:02.286160 build/soong/ui/logger/logger.go:290:   [2] --all-modules
+2026/10/28 08:15:02.286163 build/soong/ui/logger/logger.go:290:   [3] --dir=/tmp/orangefox
+2026/10/28 08:15:02.286165 build/soong/ui/logger/logger.go:290:   [4] recoveryimage
+2026/10/28 08:15:02.286168 build/soong/ui/logger/logger.go:290:   [5] -j4
+2026/10/28 08:15:02.286999 build/soong/ui/logger/logger.go:290: Detected 15.6 GB total RAM
+2026/10/28 08:15:02.287479 build/soong/ui/logger/logger.go:290: Parallelism (local/remote/highmem): 4/0/1
+2026/10/28 08:15:02.287486 build/soong/ui/logger/logger.go:290: Current file limits: 65536 soft, 65536 hard
+2026/10/28 08:15:02.287495 build/soong/ui/logger/logger.go:290: Took 70ms to start up.
+2026/10/28 08:15:03.014515 build/soong/ui/logger/logger.go:297: [prebuilts/build-tools/linux-x86/bin/nsjail -H android-build -e -u nobody -g nogroup -R / -B /tmp -B /tmp/orangefox -B /tmp/orangefox/out --disable_clone_newcgroup -- /bin/bash -c if [ $(hostname) == "android-build" ]; then echo "Android" "Success"; else echo Failure; fi]
+2026/10/28 08:15:03.023330 build/soong/ui/logger/logger.go:290: "dumpvars" executing "prebuilts/build-tools/linux-x86/bin/nsjail" [-x prebuilts/build-tools/linux-x86/bin/ckati -H android-build --cwd /tmp/orangefox -t 0 -e --proc_rw -u nobody -g nogroup --rlimit_as soft --rlimit_core soft --rlimit_cpu soft --rlimit_fsize soft --rlimit_nofile soft -R / -B /tmp -B /tmp/orangefox -B /tmp/orangefox/out --disable_clone_newcgroup -q -- -f build/make/core/config.mk --color_warnings --kati_stats dump-many-vars MAKECMDGOALS=]
+2026/10/28 08:15:03.518016 build/soong/ui/logger/logger.go:290: "dumpvars" finished with exit code 0 (495ms real, 475ms user, 136ms system, 251MB maxrss)
+2026/10/28 08:15:03.518043 build/soong/ui/logger/logger.go:297: PRODUCT_RELEASE_CONFIG_MAPS 
+2026/10/28 08:15:03.518337 build/soong/ui/logger/logger.go:297: Starting build with args: [recoveryimage]
+2026/10/28 08:15:03.518372 build/soong/ui/logger/logger.go:297: Environment: [SHELL=/bin/bash ORIGINAL_PWD=/tmp/orangefox WS=/tmp/orangefox SELENIUM_JAR_PATH=/usr/share/java/selenium-server.jar ANDROID_PYTHONPATH=/tmp/orangefox/development/python-packages/adb:/tmp/orangefox/development/python-packages/gdbrunner:/tmp/orangefox/development/python-packages: CONDA=/usr/share/miniconda GITHUB_WORKSPACE=/home/runner/work/Auto-TWRP-Builder/Auto-TWRP-Builder BUILD_ENV_SEQUENCE_NUMBER=13 ANDROID_SOONG_HOST_OUT=/tmp/orangefox/out/host/linux-x86 CCACHE_MAXSIZE=6G JAVA_HOME_11_X64=/usr/lib/jvm/temurin-11-jdk-amd64 JAVA_HOME_25_X64=/usr/lib/jvm/temurin-25-jdk-amd64 GITHUB_PATH=/home/runner/work/_temp/_runner_file_commands/add_path_4ec20ff7-a04a-4fd7-a46b-e772d76ce81a GITHUB_ACTION=build USE_CCACHE=1 GITHUB_RUN_NUMBER=34 RUNNER_NAME=GitHub Actions 1000000260 GRADLE_HOME=/usr/share/gradle-9.8.2 GITHUB_REPOSITORY_OWNER_ID=332805232 ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE=/opt/actionarchivecache XDG_CONFIG_HOME=/home/runner/.config DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1 ANT_HOME=/usr/share/ant JAVA_HOME_8_X64=/usr/lib/jvm/temurin-8-jdk-amd64 GITHUB_TRIGGERING_ACTOR=glimmer1115 GITHUB_REF_TYPE=branch ALLOW_MISSING_DEPENDENCIES=true HOMEBREW_CLEANUP_PERIODIC_FULL_DAYS=3650 ACTIONS_RUNNER_RETURN_JOB_RESULT_FOR_HOSTED=1 ANDROID_NDK=/usr/local/lib/android/sdk/ndk/27.3.13750724 TARGET_RELEASE=bp2a BOOTSTRAP_HASKELL_NONINTERACTIVE=1 PIPX_BIN_DIR=/opt/pipx_bin LOGNAME=runner GITHUB_ARTIFACTS_LIST=/home/runner/work/_temp/_runner_file_commands/artifacts_list_4ec20ff7-a04a-4fd7-a46b-e772d76ce81a GITHUB_REPOSITORY_ID=1408165503 CCACHE_DIR=/tmp/ccache GITHUB_ACTIONS=true USE_BAZEL_FALLBACK_VERSION=silent: ANDROID_NDK_LATEST_HOME=/usr/local/lib/android/sdk/ndk/30.0.16248370 SYSTEMD_EXEC_PID=1662 MAVEN_ARGS=-ntp GITHUB_SHA=0160db2ad3b313f935d3e4aee1c7fb54ae5aabfd GITHUB_WORKFLOW_REF=glimmer1115/Auto-TWRP-Builder/.github/workflows/OrangeFox Build_SM-T583.yml@refs/heads/orangefox POWERSHELL_DISTRIBUTION_CHANNEL=GitHub-Actions-Linux RUNNER_ENVIRONMENT=github-hosted DOTNET_MULTILEVEL_LOOKUP=0 GITHUB_REF=refs/heads/orangefox RUNNER_OS=Linux GITHUB_REF_PROTECTED=false HOME=/home/runner GITHUB_API_URL=https://api.github.com GOROOT_1_25_X64=/opt/hostedtoolcache/go/1.25.14/x64 RUNNER_TRACKING_ID=github_3f7bb83c-bb9f-4a7e-a110-ba3c53284957 RUNNER_ARCH=X64 RUNNER_TEMP=/home/runner/work/_temp GITHUB_STATE=/home/runner/work/_temp/_runner_file_commands/save_state_4ec20ff7-a04a-4fd7-a46b-e772d76ce81a EDGEWEBDRIVER=/usr/local/share/edge_driver JAVA_HOME_21_X64=/usr/lib/jvm/temurin-21-jdk-amd64 GITHUB_ENV=/home/runner/work/_temp/_runner_file_commands/set_env_4ec20ff7-a04a-4fd7-a46b-e772d76ce81a GITHUB_EVENT_PATH=/home/runner/work/_temp/_github_workflow/event.json INVOCATION_ID=b6f8d9aa6aff4cf0bb255132b1c01763 GITHUB_EVENT_NAME=workflow_dispatch GITHUB_RUN_ID=40652821992 JAVA_HOME_17_X64=/opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64 CCACHE_BASEDIR=/tmp/orangefox ANDROID_NDK_HOME=/usr/local/lib/android/sdk/ndk/27.3.13750724 FOX_MANIFEST_ROOT=/tmp/orangefox GITHUB_STEP_SUMMARY=/home/runner/work/_temp/_runner_file_commands/step_summary_4ec20ff7-a04a-4fd7-a46b-e772d76ce81a HOMEBREW_NO_AUTO_UPDATE=1 ORANGEFOX_RECOVERY_IMAGE_ONLY=1 GITHUB_ACTOR=glimmer1115 NVM_DIR=/home/runner/.nvm SGX_AESM_ADDR=1 GITHUB_RUN_ATTEMPT=1 ANDROID_HOME=/usr/local/lib/android/sdk TARGET_BUILD_TYPE=release GITHUB_GRAPHQL_URL=https://api.github.com/graphql PYTHONPATH=/tmp/orangefox/development/python-packages/adb:/tmp/orangefox/development/python-packages/gdbrunner:/tmp/orangefox/development/python-packages: ACCEPT_EULA=Y USER=runner PSModulePath=/root/.local/share/powershell/Modules:/usr/local/share/powershell/Modules:/opt/microsoft/powershell/7/Modules:/usr/share/az_15.6.1 GITHUB_SERVER_URL=https://github.com PIPX_HOME=/opt/pipx TOP=/tmp/orangefox GECKOWEBDRIVER=/usr/local/share/gecko_driver TRACE_BEGIN_SOONG=1793175302216972111 CHROMEWEBDRIVER=/usr/local/share/chromedriver-linux64 SHLVL=2 CCACHE_COMPILERCHECK=string:clang-r547379 ANDROID_SDK_ROOT=/usr/local/lib/android/sdk VCPKG_INSTALLATION_ROOT=/usr/local/share/vcpkg CCACHE_EXEC=/usr/bin/ccache GITHUB_ACTOR_ID=332805232 ACTIONS_ORCHESTRATION_ID=454fd7c7-f711-4bdb-9bad-b209787a2f45.build.__default RUNNER_TOOL_CACHE=/opt/hostedtoolcache ImageVersion=20261026.341.1 DOTNET_NOLOGO=1 GITHUB_ARTIFACTS=/home/runner/work/_temp/_runner_file_commands/artifacts_4ec20ff7-a04a-4fd7-a46b-e772d76ce81a GITHUB_WORKFLOW_SHA=0160db2ad3b313f935d3e4aee1c7fb54ae5aabfd GOROOT_1_24_X64=/opt/hostedtoolcache/go/1.24.13/x64 GITHUB_REF_NAME=orangefox GITHUB_JOB=build XDG_RUNTIME_DIR=/run/user/1001 CCACHE_NOHASHDIR=true AZURE_EXTENSION_DIR=/opt/az/azcliextensions GOROOT_1_26_X64=/opt/hostedtoolcache/go/1.26.10/x64 GITHUB_REPOSITORY=glimmer1115/Auto-TWRP-Builder ANDROID_NDK_ROOT=/usr/local/lib/android/sdk/ndk/27.3.13750724 CHROME_BIN=/usr/bin/google-chrome GITHUB_RETENTION_DAYS=90 JOURNAL_STREAM=8:10088 RUNNER_WORKSPACE=/home/runner/work/Auto-TWRP-Builder LEIN_HOME=/usr/local/lib/lein LEIN_JAR=/usr/local/lib/lein/self-installs/leiningen-2.12.0-standalone.jar GITHUB_ACTION_REPOSITORY= HCA_CLOUD_PROVIDER=azure GITHUB_BASE_REF= GHCUP_INSTALL_BASE_PREFIX=/usr/local CI=true SWIFT_PATH=/usr/share/swift/usr/bin ImageOS=ubuntu22 FOX_BUILD_DEVICE=gtaxladwifikx GITHUB_REPOSITORY_OWNER=glimmer1115 TARGET_PRODUCT=twrp_gtaxladwifikx GITHUB_HEAD_REF= GITHUB_ACTION_REF= TARGET_BUILD_VARIANT=eng ENABLE_RUNNER_TRACING=true GITHUB_WORKFLOW=OrangeFox Recovery Build (SM-T583) DEBIAN_FRONTEND=noninteractive GITHUB_OUTPUT=/home/runner/work/_temp/_runner_file_commands/set_output_4ec20ff7-a04a-4fd7-a46b-e772d76ce81a AGENT_TOOLSDIRECTORY=/opt/hostedtoolcache OUT=/tmp/orangefox/out/target/product/gtaxladwifikx OLDPWD=/tmp/orangefox SOONG_GENERATES_NINJA_HINT=depend OUT_DIR=/tmp/orangefox/out PYTHONDONTWRITEBYTECODE=1 TMPDIR=/tmp/orangefox/out/soong/.temp ASAN_SYMBOLIZER_PATH=/tmp/orangefox/prebuilts/clang/host/linux-x86/llvm-binutils-stable/llvm-symbolizer LC_MESSAGES=C LANG=C.UTF-8 JAVA_HOME=/tmp/orangefox/prebuilts/jdk/jdk21/linux-x86 ANDROID_JAVA_HOME=prebuilts/jdk/jdk21/linux-x86 ANDROID_JAVA8_HOME=prebuilts/jdk/jdk8/linux-x86 PATH=/tmp/orangefox/prebuilts/jdk/jdk21/linux-x86/bin:/tmp/orangefox/out/host/linux-x86/bin:/tmp/orangefox/out/host/linux-x86/bin:/tmp/orangefox/prebuilts/clang/host/linux-x86/llvm-binutils-stable:/tmp/orangefox/prebuilts/asuite/acloud/linux-x86:/tmp/orangefox/prebuilts/asuite/aidegen/linux-x86:/tmp/orangefox/prebuilts/asuite/atest/linux-x86:/tmp/orangefox/prebuilts/jdk/jdk21/linux-x86/bin:/tmp/orangefox/build/soong/bin:/tmp/orangefox/build/bazel/bin:/tmp/orangefox/development/scripts:/tmp/orangefox/prebuilts/devtools/tools:/tmp/orangefox/prebuilts/misc/linux-x86/dtc:/tmp/orangefox/prebuilts/misc/linux-x86/libufdt:/opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/17.0.21-9/x64/bin:/snap/bin:/home/runner/.local/bin:/opt/pipx_bin:/home/runner/.cargo/bin:/home/runner/.config/composer/vendor/bin:/usr/local/.ghcup/bin:/home/runner/.dotnet/tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin UNZIP_DISABLE_ZIPBOMB_DETECTION=TRUE BUILD_DATETIME_FILE=/tmp/orangefox/out/build_date.txt BUILD_USERNAME=runner PWD=/tmp/orangefox]
+2026/10/28 08:15:03.518458 build/soong/ui/logger/logger.go:290: Total RAM: 15.6GB
+2026/10/28 08:15:03.518473 build/soong/ui/build/build.go:213: ************************************************************
+2026/10/28 08:15:03.518482 build/soong/ui/build/build.go:214: You are building on a machine with 15.6GB of RAM
+2026/10/28 08:15:03.518487 build/soong/ui/build/build.go:215: 
+2026/10/28 08:15:03.518491 build/soong/ui/build/build.go:216: The minimum required amount of free memory is around 16GB,
+2026/10/28 08:15:03.518496 build/soong/ui/build/build.go:217: and even with that, some configurations may not work.
+2026/10/28 08:15:03.518500 build/soong/ui/build/build.go:218: 
+2026/10/28 08:15:03.518505 build/soong/ui/build/build.go:219: If you run into segfaults or other errors, try reducing your
+2026/10/28 08:15:03.518511 build/soong/ui/build/build.go:220: -j value.
+2026/10/28 08:15:03.518516 build/soong/ui/build/build.go:221: ************************************************************
+2026/10/28 08:15:03.869345 build/soong/ui/logger/logger.go:290: "dumpvars" executing "prebuilts/build-tools/linux-x86/bin/nsjail" [-x prebuilts/build-tools/linux-x86/bin/ckati -H android-build --cwd /tmp/orangefox -t 0 -e --proc_rw -u nobody -g nogroup --rlimit_as soft --rlimit_core soft --rlimit_cpu soft --rlimit_fsize soft --rlimit_nofile soft -R / -B /tmp -B /tmp/orangefox -B /tmp/orangefox/out --disable_clone_newcgroup -q -- -f build/make/core/config.mk --color_warnings --kati_stats dump-many-vars MAKECMDGOALS=recoveryimage]
+2026/10/28 08:15:04.424518 build/soong/ui/logger/logger.go:290: "dumpvars" finished with exit code 0 (555ms real, 508ms user, 168ms system, 252MB maxrss)
+2026/10/28 08:15:04.424555 build/soong/ui/logger/logger.go:297: NINJA_GOALS recoveryimage
+2026/10/28 08:15:04.424562 build/soong/ui/logger/logger.go:297: KATI_GOALS 
+2026/10/28 08:15:04.424567 build/soong/ui/logger/logger.go:297: TARGET_DEVICE gtaxladwifikx
+2026/10/28 08:15:04.424571 build/soong/ui/logger/logger.go:297: TARGET_DEVICE_DIR device/samsung/gtaxladwifikx
+2026/10/28 08:15:04.424575 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_DUP_RULES 
+2026/10/28 08:15:04.424578 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_USES_NETWORK 
+2026/10/28 08:15:04.424580 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_NINJA_USES_ENV_VARS 
+2026/10/28 08:15:04.424584 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_SRC_DIR_IS_WRITABLE 
+2026/10/28 08:15:04.424587 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_SRC_DIR_RW_ALLOWLIST 
+2026/10/28 08:15:04.424590 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_MISSING_OUTPUTS 
+2026/10/28 08:15:04.424593 build/soong/ui/logger/logger.go:297: PRODUCT_SOONG_ONLY 
+2026/10/28 08:15:04.424595 build/soong/ui/logger/logger.go:297: TARGET_BUILD_TYPE release
+2026/10/28 08:15:04.424610 build/soong/ui/logger/logger.go:297: HOST_ARCH x86_64
+2026/10/28 08:15:04.424627 build/soong/ui/logger/logger.go:297: HOST_2ND_ARCH x86
+2026/10/28 08:15:04.424630 build/soong/ui/logger/logger.go:297: HOST_CROSS_ARCH x86
+2026/10/28 08:15:04.424632 build/soong/ui/logger/logger.go:297: HOST_CROSS_2ND_ARCH x86_64
+2026/10/28 08:15:04.424635 build/soong/ui/logger/logger.go:297: HOST_BUILD_TYPE release
+2026/10/28 08:15:04.424638 build/soong/ui/logger/logger.go:297: PRODUCT_SOONG_NAMESPACES 
+2026/10/28 08:15:04.424641 build/soong/ui/logger/logger.go:297: DEFAULT_WARNING_BUILD_MODULE_TYPES 
+2026/10/28 08:15:04.424644 build/soong/ui/logger/logger.go:297: DEFAULT_ERROR_BUILD_MODULE_TYPES BUILD_COPY_HEADERS BUILD_HOST_EXECUTABLE BUILD_HOST_SHARED_LIBRARY BUILD_HOST_STATIC_LIBRARY
+2026/10/28 08:15:04.424647 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_PREBUILT_ELF_FILES 
+2026/10/28 08:15:04.424650 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_TREBLE_SYSPROP_NEVERALLOW 
+2026/10/28 08:15:04.424652 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_USES_BUILD_COPY_HEADERS 
+2026/10/28 08:15:04.424655 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_USES_BUILD_EXECUTABLE 
+2026/10/28 08:15:04.424657 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_USES_BUILD_FUZZ_TEST 
+2026/10/28 08:15:04.424660 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_USES_BUILD_HEADER_LIBRARY 
+2026/10/28 08:15:04.424663 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_USES_BUILD_HOST_EXECUTABLE 
+2026/10/28 08:15:04.424665 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_USES_BUILD_HOST_JAVA_LIBRARY 
+2026/10/28 08:15:04.424668 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_USES_BUILD_HOST_PREBUILT 
+2026/10/28 08:15:04.424670 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_USES_BUILD_HOST_SHARED_LIBRARY 
+2026/10/28 08:15:04.424673 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_USES_BUILD_HOST_STATIC_LIBRARY 
+2026/10/28 08:15:04.424676 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_USES_BUILD_JAVA_LIBRARY 
+2026/10/28 08:15:04.424679 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_USES_BUILD_MULTI_PREBUILT 
+2026/10/28 08:15:04.424683 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_USES_BUILD_NATIVE_TEST 
+2026/10/28 08:15:04.424686 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_USES_BUILD_NOTICE_FILE 
+2026/10/28 08:15:04.424689 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_USES_BUILD_PACKAGE 
+2026/10/28 08:15:04.424691 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_USES_BUILD_PHONY_PACKAGE 
+2026/10/28 08:15:04.424694 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_USES_BUILD_PREBUILT 
+2026/10/28 08:15:04.424697 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_USES_BUILD_RRO_PACKAGE 
+2026/10/28 08:15:04.424700 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_USES_BUILD_SHARED_LIBRARY 
+2026/10/28 08:15:04.424703 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_USES_BUILD_STATIC_JAVA_LIBRARY 
+2026/10/28 08:15:04.424706 build/soong/ui/logger/logger.go:297: BUILD_BROKEN_USES_BUILD_STATIC_LIBRARY 
+2026/10/28 08:15:04.424709 build/soong/ui/logger/logger.go:297: RELEASE_BUILD_EXECUTION_METRICS 
+2026/10/28 08:15:04.424711 build/soong/ui/logger/logger.go:297: TARGET_PRODUCT twrp_gtaxladwifikx
+2026/10/28 08:15:04.424714 build/soong/ui/logger/logger.go:297: TARGET_BUILD_VARIANT eng
+2026/10/28 08:15:04.424717 build/soong/ui/logger/logger.go:297: TARGET_BUILD_APPS 
+2026/10/28 08:15:04.424720 build/soong/ui/logger/logger.go:297: TARGET_BUILD_UNBUNDLED 
+2026/10/28 08:15:04.424722 build/soong/ui/logger/logger.go:297: PRODUCT_RELEASE_CONFIG_MAPS 
+2026/10/28 08:15:04.424725 build/soong/ui/logger/logger.go:297: CC_WRAPPER /usr/bin/ccache
+2026/10/28 08:15:04.424728 build/soong/ui/logger/logger.go:297: CXX_WRAPPER /usr/bin/ccache
+2026/10/28 08:15:04.424731 build/soong/ui/logger/logger.go:297: RBE_WRAPPER 
+2026/10/28 08:15:04.424733 build/soong/ui/logger/logger.go:297: JAVAC_WRAPPER 
+2026/10/28 08:15:04.424736 build/soong/ui/logger/logger.go:297: R8_WRAPPER 
+2026/10/28 08:15:04.424739 build/soong/ui/logger/logger.go:297: D8_WRAPPER 
+2026/10/28 08:15:04.424742 build/soong/ui/logger/logger.go:297: CCACHE_COMPILERCHECK string:clang-r547379
+2026/10/28 08:15:04.424747 build/soong/ui/logger/logger.go:297: CCACHE_SLOPPINESS time_macros,include_file_mtime,file_macro
+2026/10/28 08:15:04.424750 build/soong/ui/logger/logger.go:297: CCACHE_BASEDIR /
+2026/10/28 08:15:04.424753 build/soong/ui/logger/logger.go:297: CCACHE_CPP2 true
+2026/10/28 08:15:04.424755 build/soong/ui/logger/logger.go:297: TOOLCHAIN_RUSAGE_OUTPUT 
+2026/10/28 08:15:04.424758 build/soong/ui/logger/logger.go:297: PLATFORM_VERSION_CODENAME REL
+2026/10/28 08:15:04.424761 build/soong/ui/logger/logger.go:297: PLATFORM_VERSION 16.1.0
+2026/10/28 08:15:04.424764 build/soong/ui/logger/logger.go:297: PRODUCT_SOURCE_ROOT_DIRS 
+2026/10/28 08:15:04.424767 build/soong/ui/logger/logger.go:297: TARGET_PRODUCT twrp_gtaxladwifikx
+2026/10/28 08:15:04.424770 build/soong/ui/logger/logger.go:297: TARGET_BUILD_VARIANT eng
+2026/10/28 08:15:04.424773 build/soong/ui/logger/logger.go:297: TARGET_BUILD_APPS 
+2026/10/28 08:15:04.424775 build/soong/ui/logger/logger.go:297: TARGET_BUILD_UNBUNDLED 
+2026/10/28 08:15:04.424779 build/soong/ui/logger/logger.go:297: TARGET_ARCH arm
+2026/10/28 08:15:04.424782 build/soong/ui/logger/logger.go:297: TARGET_ARCH_VARIANT armv8-a
+2026/10/28 08:15:04.424785 build/soong/ui/logger/logger.go:297: TARGET_CPU_VARIANT cortex-a53
+2026/10/28 08:15:04.424787 build/soong/ui/logger/logger.go:297: TARGET_2ND_ARCH 
+2026/10/28 08:15:04.424790 build/soong/ui/logger/logger.go:297: TARGET_2ND_ARCH_VARIANT 
+2026/10/28 08:15:04.424793 build/soong/ui/logger/logger.go:297: TARGET_2ND_CPU_VARIANT 
+2026/10/28 08:15:04.424795 build/soong/ui/logger/logger.go:297: HOST_OS linux
+2026/10/28 08:15:04.424799 build/soong/ui/logger/logger.go:297: HOST_OS_EXTRA Linux-6.8.0-1070-azure-x86_64-Ubuntu-22.04.5-LTS
+2026/10/28 08:15:04.424801 build/soong/ui/logger/logger.go:297: HOST_CROSS_OS windows
+2026/10/28 08:15:04.424804 build/soong/ui/logger/logger.go:297: BUILD_ID BP2A.250605.031.A2
+2026/10/28 08:15:04.424807 build/soong/ui/logger/logger.go:297: OUT_DIR /tmp/orangefox/out
+2026/10/28 08:15:04.424810 build/soong/ui/logger/logger.go:297: SOONG_SDK_SNAPSHOT_TARGET_BUILD_RELEASE 
+2026/10/28 08:15:05.050074 build/soong/ui/logger/logger.go:290: "soong bootstrap" executing "prebuilts/build-tools/linux-x86/bin/nsjail" [-x prebuilts/build-tools/linux-x86/bin/ninja -H android-build --cwd /tmp/orangefox -t 0 -e --proc_rw -u nobody -g nogroup --rlimit_as soft --rlimit_core soft --rlimit_cpu soft --rlimit_fsize soft --rlimit_nofile soft -R / -B /tmp -B /tmp/orangefox -B /tmp/orangefox/out --disable_clone_newcgroup -q -- -d keepdepfile -d stats -o usesphonyoutputs=yes -o preremoveoutputs=yes -w dupbuild=err -w outputdir=err -w missingoutfile=err -j 4 --frontend_file /tmp/orangefox/out/.ninja_fifo -f /tmp/orangefox/out/soong/bootstrap.ninja /tmp/orangefox/out/soong/build.twrp_gtaxladwifikx.ninja]
+2026/10/28 08:19:57.442360 build/soong/ui/logger/logger.go:290: "soong bootstrap" finished with exit code 0 (4m52.39s real, 17m1.624s user, 56.004s system, 12675MB maxrss)
+2026/10/28 08:19:57.682745 build/soong/ui/logger/logger.go:290: "ckati" executing "prebuilts/build-tools/linux-x86/bin/nsjail" [-x prebuilts/build-tools/linux-x86/bin/ckati -H android-build --cwd /tmp/orangefox -t 0 -e --proc_rw -u nobody -g nogroup --rlimit_as soft --rlimit_core soft --rlimit_cpu soft --rlimit_fsize soft --rlimit_nofile soft -R / -B /tmp -B /tmp/orangefox -B /tmp/orangefox/out --disable_clone_newcgroup -q -- --ninja --ninja_dir=/tmp/orangefox/out --ninja_suffix=-twrp_gtaxladwifikx-cleanspec --no_ninja_prelude --use_ninja_phony_output --regen --ignore_optional_include=/tmp/orangefox/out/%.P --detect_android_echo --color_warnings --gen_all_targets --use_find_emulator --werror_find_emulator --no_builtin_rules --werror_suffix_rules --werror_real_to_phony --top_level_phony --werror_phony_looks_real --werror_writable --kati_stats --werror_implicit_rules --werror_overriding_commands -f build/make/core/cleanbuild.mk SOONG_MAKEVARS_MK=/tmp/orangefox/out/soong/make_vars-twrp_gtaxladwifikx.mk TARGET_DEVICE_DIR=device/samsung/gtaxladwifikx]
+2026/10/28 08:19:59.311218 build/soong/ui/logger/logger.go:290: "ckati" finished with exit code 0 (1.628s real, 503ms user, 198ms system, 274MB maxrss)
+2026/10/28 08:19:59.316819 build/soong/ui/logger/logger.go:290: "ckati" executing "prebuilts/build-tools/linux-x86/bin/nsjail" [-x prebuilts/build-tools/linux-x86/bin/ckati -H android-build --cwd /tmp/orangefox -t 0 -e --proc_rw -u nobody -g nogroup --rlimit_as soft --rlimit_core soft --rlimit_cpu soft --rlimit_fsize soft --rlimit_nofile soft -R / -B /tmp -B /tmp/orangefox -B /tmp/orangefox/out --disable_clone_newcgroup -q -- --ninja --ninja_dir=/tmp/orangefox/out --ninja_suffix=-twrp_gtaxladwifikx --no_ninja_prelude --use_ninja_phony_output --regen --ignore_optional_include=/tmp/orangefox/out/%.P --detect_android_echo --color_warnings --gen_all_targets --use_find_emulator --werror_find_emulator --no_builtin_rules --werror_suffix_rules --werror_real_to_phony --top_level_phony --werror_phony_looks_real --werror_writable --kati_stats --writable /tmp/orangefox/out/ --werror_implicit_rules -f build/make/core/main.mk --werror_overriding_commands SOONG_MAKEVARS_MK=/tmp/orangefox/out/soong/make_vars-twrp_gtaxladwifikx.mk SOONG_ANDROID_MK=/tmp/orangefox/out/soong/Android-twrp_gtaxladwifikx.mk TARGET_DEVICE_DIR=device/samsung/gtaxladwifikx KATI_PACKAGE_MK_DIR=/tmp/orangefox/out/soong/kati_packaging-twrp_gtaxladwifikx]
+2026/10/28 08:21:10.113669 build/soong/ui/logger/logger.go:290: "ckati" finished with exit code 0 (1m10.797s real, 46.252s user, 5.622s system, 7382MB maxrss)
+2026/10/28 08:21:10.115719 build/soong/ui/logger/logger.go:290: "ckati" executing "prebuilts/build-tools/linux-x86/bin/nsjail" [-x prebuilts/build-tools/linux-x86/bin/ckati -H android-build --cwd /tmp/orangefox -t 0 -e --proc_rw -u nobody -g nogroup --rlimit_as soft --rlimit_core soft --rlimit_cpu soft --rlimit_fsize soft --rlimit_nofile soft -R / -B /tmp -B /tmp/orangefox -B /tmp/orangefox/out --disable_clone_newcgroup -q -- --ninja --ninja_dir=/tmp/orangefox/out --ninja_suffix=-twrp_gtaxladwifikx-package --no_ninja_prelude --use_ninja_phony_output --regen --ignore_optional_include=/tmp/orangefox/out/%.P --detect_android_echo --color_warnings --gen_all_targets --use_find_emulator --werror_find_emulator --no_builtin_rules --werror_suffix_rules --werror_real_to_phony --top_level_phony --werror_phony_looks_real --werror_writable --kati_stats --writable /tmp/orangefox/out/dist/ --werror_implicit_rules --werror_overriding_commands -f build/make/packaging/main.mk KATI_PACKAGE_MK_DIR=/tmp/orangefox/out/soong/kati_packaging-twrp_gtaxladwifikx]
+2026/10/28 08:21:10.195423 build/soong/ui/logger/logger.go:290: "ckati" finished with exit code 0 (80ms real, 39ms user, 14ms system, 274MB maxrss)
+2026/10/28 08:21:10.197874 build/soong/ui/logger/logger.go:297: Ninja environment: 
+2026/10/28 08:21:10.197889 build/soong/ui/logger/logger.go:290:   ASAN_SYMBOLIZER_PATH=/tmp/orangefox/prebuilts/clang/host/linux-x86/llvm-binutils-stable/llvm-symbolizer
+2026/10/28 08:21:10.198026 build/soong/ui/logger/logger.go:290:   CCACHE_BASEDIR=/
+2026/10/28 08:21:10.198030 build/soong/ui/logger/logger.go:290:   CCACHE_COMPILERCHECK=string:clang-r547379
+2026/10/28 08:21:10.198034 build/soong/ui/logger/logger.go:290:   CCACHE_CPP2=true
+2026/10/28 08:21:10.198038 build/soong/ui/logger/logger.go:290:   CCACHE_DIR=/tmp/ccache
+2026/10/28 08:21:10.198042 build/soong/ui/logger/logger.go:290:   CCACHE_SLOPPINESS=time_macros,include_file_mtime,file_macro
+2026/10/28 08:21:10.198045 build/soong/ui/logger/logger.go:290:   DIST_DIR=/tmp/orangefox/out/dist
+2026/10/28 08:21:10.198049 build/soong/ui/logger/logger.go:290:   HOME=/home/runner
+2026/10/28 08:21:10.198052 build/soong/ui/logger/logger.go:290:   JAVA_HOME=/tmp/orangefox/prebuilts/jdk/jdk21/linux-x86
+2026/10/28 08:21:10.198056 build/soong/ui/logger/logger.go:290:   LANG=C.UTF-8
+2026/10/28 08:21:10.198060 build/soong/ui/logger/logger.go:290:   LC_MESSAGES=C
+2026/10/28 08:21:10.198063 build/soong/ui/logger/logger.go:290:   OUT_DIR=/tmp/orangefox/out
+2026/10/28 08:21:10.198067 build/soong/ui/logger/logger.go:290:   PATH=/tmp/orangefox/prebuilts/build-tools/path/linux-x86:/tmp/orangefox/out/.path
+2026/10/28 08:21:10.198076 build/soong/ui/logger/logger.go:290:   PWD=/tmp/orangefox
+2026/10/28 08:21:10.198079 build/soong/ui/logger/logger.go:290:   PYTHONDONTWRITEBYTECODE=1
+2026/10/28 08:21:10.198081 build/soong/ui/logger/logger.go:290:   SHELL=/bin/bash
+2026/10/28 08:21:10.198084 build/soong/ui/logger/logger.go:290:   SOONG_METRICS_AGGREGATION_DIR=/tmp/orangefox/out/soong/metrics_aggregation
+2026/10/28 08:21:10.198086 build/soong/ui/logger/logger.go:290:   TARGET_BUILD_VARIANT=eng
+2026/10/28 08:21:10.198089 build/soong/ui/logger/logger.go:290:   TARGET_PRODUCT=twrp_gtaxladwifikx
+2026/10/28 08:21:10.198091 build/soong/ui/logger/logger.go:290:   TMPDIR=/tmp/orangefox/out/soong/.temp
+2026/10/28 08:21:10.198094 build/soong/ui/logger/logger.go:290:   USER=runner
+2026/10/28 08:21:10.198507 build/soong/ui/logger/logger.go:290: ExecutionMetrics running
+2026/10/28 08:21:10.200348 build/soong/ui/logger/logger.go:290: "ninja" executing "prebuilts/build-tools/linux-x86/bin/nsjail" [-x prebuilts/build-tools/linux-x86/bin/ninja -H android-build --cwd /tmp/orangefox -t 0 -e --proc_rw -u nobody -g nogroup --rlimit_as soft --rlimit_core soft --rlimit_cpu soft --rlimit_fsize soft --rlimit_nofile soft -R / -B /tmp -B /tmp/orangefox -B /tmp/orangefox/out --disable_clone_newcgroup -q -- -d keepdepfile -d keeprsp -d stats --frontend_file /tmp/orangefox/out/.ninja_fifo -o usesphonyoutputs=yes -w dupbuild=err -w missingdepfile=err recoveryimage -j 4 -f /tmp/orangefox/out/combined-twrp_gtaxladwifikx.ninja -w missingoutfile=err -o usesweightlist=/tmp/orangefox/out/.ninja_weight_list]
+2026/10/28 08:31:32.188663 build/soong/ui/logger/logger.go:290: "ninja" finished with exit code 0 (10m21.988s real, 31m12.668s user, 3m48.142s system, 6295MB maxrss)
+2026/10/28 08:31:32.244250 build/soong/ui/logger/logger.go:290: critical path took 5m45.512265673s
+2026/10/28 08:31:32.244284 build/soong/ui/logger/logger.go:290: elapsed time 16m27.47817374s
+2026/10/28 08:31:32.244289 build/soong/ui/logger/logger.go:290: perfect parallelism ratio 34%
+2026/10/28 08:31:32.244294 build/soong/ui/logger/logger.go:283: critical path:
+2026/10/28 08:31:32.244301 build/soong/ui/logger/logger.go:290:     0:00 //external/icu/libandroidicuinit:libandroidicuinit clang++ IcuRegistration.cpp [linux_glibc] (priority: 76)
+2026/10/28 08:31:32.244306 build/soong/ui/logger/logger.go:290:     0:00 //external/icu/libandroidicuinit:libandroidicuinit static link libandroidicuinit.a [linux_glibc] (priority: 75)
+2026/10/28 08:31:32.244310 build/soong/ui/logger/logger.go:290:     0:01 //external/icu/icu4c/source/common:libicuuc link libicuuc-host.so [linux_glibc] (priority: 74)
+2026/10/28 08:31:32.244314 build/soong/ui/logger/logger.go:290:     0:00 //external/icu/icu4c/source/common:libicuuc generate toc libicuuc-host.so [linux_glibc] (priority: 73)
+2026/10/28 08:31:32.244318 build/soong/ui/logger/logger.go:290:     0:00 //external/icu/icu4c/source/i18n:libicui18n link libicui18n-host.so [linux_glibc] (priority: 72)
+2026/10/28 08:31:32.244322 build/soong/ui/logger/logger.go:290:     0:00 //external/icu/icu4c/source/i18n:libicui18n generate toc libicui18n-host.so [linux_glibc] (priority: 71)
+2026/10/28 08:31:32.244326 build/soong/ui/logger/logger.go:290:     0:00 //external/sqlite/dist:libsqlite link libsqlite.so [linux_glibc] (priority: 70)
+2026/10/28 08:31:32.244330 build/soong/ui/logger/logger.go:290:     0:04 //prebuilts/build-tools:py3-stdlib-prebuilt Precompile the python sources of py3-stdlib-prebuilt [linux_glibc] (priority: 69)
+2026/10/28 08:31:32.244334 build/soong/ui/logger/logger.go:290:     0:00 //build/soong/scripts:rustc_linker Precompile the python sources of rustc_linker [linux_glibc] (priority: 68)
+2026/10/28 08:31:32.244338 build/soong/ui/logger/logger.go:290:     0:00 //build/soong/scripts:rustc_linker embedded python archive [linux_glibc] (priority: 67)
+2026/10/28 08:31:32.244342 build/soong/ui/logger/logger.go:290:     0:00 host Prebuilt: rustc_linker (/tmp/orangefox/out/host/linux-x86/obj/EXECUTABLES/rustc_linker_intermediates/rustc_linker) (priority: 66)
+2026/10/28 08:31:32.244351 build/soong/ui/logger/logger.go:290:     0:00 Install: /tmp/orangefox/out/host/linux-x86/bin/rustc_linker (priority: 65)
+2026/10/28 08:31:32.244354 build/soong/ui/logger/logger.go:290:     0:00 //external/rust/android-crates-io/crates/unicode-ident:libunicode_ident rustc src/lib.rs [linux_glibc] (priority: 64)
+2026/10/28 08:31:32.244357 build/soong/ui/logger/logger.go:290:     0:04 //external/rust/android-crates-io/crates/proc-macro2:libproc_macro2 rustc src/lib.rs [linux_glibc] (priority: 63)
+2026/10/28 08:31:32.244360 build/soong/ui/logger/logger.go:290:     0:01 //external/rust/android-crates-io/crates/quote:libquote rustc src/lib.rs [linux_glibc] (priority: 62)
+2026/10/28 08:31:32.244363 build/soong/ui/logger/logger.go:290:     0:31 //external/rust/android-crates-io/crates/syn:libsyn rustc src/lib.rs [linux_glibc] (priority: 61)
+2026/10/28 08:31:32.244366 build/soong/ui/logger/logger.go:290:     0:17 //external/rust/android-crates-io/crates/serde_derive:libserde_derive rustc src/lib.rs [linux_glibc] (priority: 59)
+2026/10/28 08:31:32.244369 build/soong/ui/logger/logger.go:290:     0:04 //external/rust/android-crates-io/crates/serde:libserde rustc src/lib.rs [linux_glibc] (priority: 58)
+2026/10/28 08:31:32.244372 build/soong/ui/logger/logger.go:290:     0:01 //external/rust/android-crates-io/crates/bytes:libbytes rustc src/lib.rs [linux_glibc] (priority: 57)
+2026/10/28 08:31:32.244374 build/soong/ui/logger/logger.go:290:     0:38 //external/rust/android-crates-io/crates/protobuf:libprotobuf rustc src/lib.rs [linux_glibc] (priority: 56)
+2026/10/28 08:31:32.244377 build/soong/ui/logger/logger.go:290:     0:14 //external/rust/android-crates-io/crates/protobuf-parse:libprotobuf_parse rustc src/lib.rs [linux_glibc] (priority: 55)
+2026/10/28 08:31:32.244380 build/soong/ui/logger/logger.go:290:     0:25 //external/rust/android-crates-io/crates/protobuf-codegen:libprotobuf_codegen rustc src/lib.rs [linux_glibc] (priority: 54)
+2026/10/28 08:31:32.244383 build/soong/ui/logger/logger.go:290:     0:26 //external/rust/android-crates-io/crates/protobuf-codegen:protoc-gen-rust rustc src/bin/protoc-gen-rust.rs [linux_glibc] (priority: 53)
+2026/10/28 08:31:32.244386 build/soong/ui/logger/logger.go:290:     0:00 host Prebuilt: protoc-gen-rust (/tmp/orangefox/out/host/linux-x86/obj/EXECUTABLES/protoc-gen-rust_intermediates/protoc-gen-rust) (priority: 52)
+2026/10/28 08:31:32.244389 build/soong/ui/logger/logger.go:290:     0:00 Install: /tmp/orangefox/out/host/linux-x86/bin/protoc-gen-rust (priority: 51)
+2026/10/28 08:31:32.244392 build/soong/ui/logger/logger.go:290:     0:00 //build/make/tools/aconfig/aconfig_protos:libaconfig_rust_proto protoc [linux_glibc] (priority: 27)
+2026/10/28 08:31:32.244395 build/soong/ui/logger/logger.go:290:     0:06 //build/make/tools/aconfig/aconfig_protos:libaconfig_rust_proto rustc mod_aconfig_rust_proto.rs [linux_glibc] (priority: 26)
+2026/10/28 08:31:32.244398 build/soong/ui/logger/logger.go:290:     0:00 //build/make/tools/aconfig/aconfig_protos:libaconfig_protos clippy src/lib.rs [linux_glibc] (priority: 25)
+2026/10/28 08:31:32.244404 build/soong/ui/logger/logger.go:290:     0:03 //build/make/tools/aconfig/aconfig_protos:libaconfig_protos rustc src/lib.rs [linux_glibc] (priority: 24)
+2026/10/28 08:31:32.244407 build/soong/ui/logger/logger.go:290:     0:01 //build/make/tools/aconfig/aconfig:aconfig clippy src/main.rs [linux_glibc] (priority: 23)
+2026/10/28 08:31:32.244415 build/soong/ui/logger/logger.go:290:     1:01 //build/make/tools/aconfig/aconfig:aconfig rustc src/main.rs [linux_glibc] (priority: 22)
+2026/10/28 08:31:32.244418 build/soong/ui/logger/logger.go:290:     0:00 host Prebuilt: aconfig (/tmp/orangefox/out/host/linux-x86/obj/EXECUTABLES/aconfig_intermediates/aconfig) (priority: 21)
+2026/10/28 08:31:32.244421 build/soong/ui/logger/logger.go:290:     0:00 Install: /tmp/orangefox/out/host/linux-x86/bin/aconfig (priority: 20)
+2026/10/28 08:31:32.244424 build/soong/ui/logger/logger.go:290:     0:00 //frameworks/base:android.security.flags-aconfig aconfig_declarations (priority: 19)
+2026/10/28 08:31:32.244430 build/soong/ui/logger/logger.go:290:     0:00 //frameworks/base:libandroid_security_flags_rust rust_aconfig_library (priority: 18)
+2026/10/28 08:31:32.244433 build/soong/ui/logger/logger.go:290:     0:00 //frameworks/base:libandroid_security_flags_rust rustc src/lib.rs (priority: 17)
+2026/10/28 08:31:32.244436 build/soong/ui/logger/logger.go:290:     0:05 //system/security/keystore2:libkeystore2 clippy src/lib.rs (priority: 16)
+2026/10/28 08:31:32.244439 build/soong/ui/logger/logger.go:290:     0:43 //system/security/keystore2:libkeystore2 rustc src/lib.rs (priority: 15)
+2026/10/28 08:31:32.244444 build/soong/ui/logger/logger.go:290:     0:00 //system/security/keystore2/legacykeystore:liblegacykeystore-rust clippy lib.rs (priority: 14)
+2026/10/28 08:31:32.244446 build/soong/ui/logger/logger.go:290:     0:06 //system/security/keystore2/legacykeystore:liblegacykeystore-rust rustc lib.rs (priority: 13)
+2026/10/28 08:31:32.244450 build/soong/ui/logger/logger.go:290:     0:00 //system/security/keystore2:keystore2 clippy src/keystore2_main.rs (priority: 12)
+2026/10/28 08:31:32.244452 build/soong/ui/logger/logger.go:290:     0:35 //system/security/keystore2:keystore2 rustc src/keystore2_main.rs (priority: 11)
+2026/10/28 08:31:32.244456 build/soong/ui/logger/logger.go:290:     0:00 //system/security/keystore2:keystore2 strip keystore2 (priority: 10)
+2026/10/28 08:31:32.244459 build/soong/ui/logger/logger.go:290:     0:00 target Prebuilt: keystore2 (/tmp/orangefox/out/target/product/gtaxladwifikx/obj/EXECUTABLES/keystore2_intermediates/keystore2) (priority: 9)
+2026/10/28 08:31:32.244462 build/soong/ui/logger/logger.go:290:     0:00 Install: /tmp/orangefox/out/target/product/gtaxladwifikx/system/bin/keystore2 (priority: 8)
+2026/10/28 08:31:32.244465 build/soong/ui/logger/logger.go:290:     0:00 Install: /tmp/orangefox/out/target/product/gtaxladwifikx/recovery/root/system/bin/recovery (priority: 7)
+2026/10/28 08:31:32.244468 build/soong/ui/logger/logger.go:290:     0:01 build /tmp/orangefox/out/target/product/gtaxladwifikx/obj/PACKAGING/recovery_intermediates/ramdisk_files-timestamp (priority: 6)
+2026/10/28 08:31:32.244471 build/soong/ui/logger/logger.go:290:     0:00 ----- Making uncompressed recovery ramdisk ------ (priority: 5)
+2026/10/28 08:31:32.244473 build/soong/ui/logger/logger.go:290:     0:01 ----- Making compressed recovery ramdisk ------ (priority: 4)
+2026/10/28 08:31:32.244476 build/soong/ui/logger/logger.go:290:     0:00 build /tmp/orangefox/out/target/product/gtaxladwifikx/recovery.img (priority: 3)
+2026/10/28 08:31:32.244479 build/soong/ui/logger/logger.go:290:     0:00 build /tmp/orangefox/out/target/product/gtaxladwifikx/vendor/etc/recovery-resource.dat (priority: 2)
+2026/10/28 08:31:32.244482 build/soong/ui/logger/logger.go:290:     0:16 build recoveryimage (priority: 1)

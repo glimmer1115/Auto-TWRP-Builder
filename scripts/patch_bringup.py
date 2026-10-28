@@ -326,12 +326,19 @@ def self_test():
     for setting in (
         "TARGET_USE_CONFIGFS := false",
         "androidboot.usbconfig=adb",
-        "TW_MAX_BRIGHTNESS := 150",
+        'TW_BRIGHTNESS_PATH := "/sys/devices/14800000.dsim/backlight/panel/brightness"',
+        "TW_MAX_BRIGHTNESS := 306",
+        "TW_DEFAULT_BRIGHTNESS := 200",
     ):
         if setting not in board:
             raise SystemExit("BoardConfig.mk missing setting: " + setting)
-    if 'echo "TW_MAX_BRIGHTNESS := 150"' not in workflow:
-        raise SystemExit("workflow brightness override is not 150")
+    if (
+        "echo 'TW_BRIGHTNESS_PATH := \"/sys/devices/14800000.dsim/backlight/panel/brightness\"'" not in workflow
+        or
+        'echo "TW_MAX_BRIGHTNESS := 306"' not in workflow
+        or 'echo "TW_DEFAULT_BRIGHTNESS := 200"' not in workflow
+    ):
+        raise SystemExit("workflow brightness overrides do not match BoardConfig.mk")
     if (
         not wait.startswith("#!/sbin/sh\n")
         or 'case "$requested" in' not in wait

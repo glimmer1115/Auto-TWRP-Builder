@@ -1,0 +1,588 @@
++ []_]
+--delete_efs_ota
+--data_resizing
+--delete_apn_changes
+reboot reason : UNKNOWN 
+-
++ [RG]
+--carry_out=csc_factory
+--data_resizing
+reboot reason : UNKNOWN 
+-
++ [ZR]
+--update_package=@/cache/recovery/block.map
+--update_org_package=/data/fota/update.zip
+--carry_out=open_fota
+--locale=ko-KR
+reboot reason : UNKNOWN 
+-
++ [M]]
+--wipe_data
+--reason=MasterClearConfirm
+--locale=ko-KR
+reboot reason : UNKNOWN 
+-
++ [lh]
+--wipe_data
+--reason=MasterClearConfirm
+--locale=ko-KR
+reboot reason : UNKNOWN 
+-
++ [xs]
+--wipe_data
+--reason=MasterClearConfirm
+--locale=ko-KR
+reboot reason : UNKNOWN 
+-
++ [Xs]
+--wipe_data
+--reason=MasterClearConfirm
+--locale=ko-KR
+reboot reason : UNKNOWN 
+-
++ [lE]
+--wipe_data
+--reason=MasterClearConfirm
+--locale=ko-KR
+reboot reason : UNKNOWN 
+-
++ [CW]
+reboot reason : UNKNOWN 
+-
++ [_K]
+reboot reason : UNKNOWN 
+-
++ [cC]
+reboot reason : UNKNOWN 
+-
++ [Sh]
+reboot reason : UNKNOWN 
+-
++ [XE]
+reboot reason : UNKNOWN 
+-
++ [Jk]
+reboot reason : UNKNOWN 
+-
++ [iG]
+reboot reason : UNKNOWN 
+-
++ [op]
+reboot reason : UNKNOWN 
+-
++ [XE]
+reboot reason : UNKNOWN 
+-
++ [wj]
+reboot reason : UNKNOWN 
+-
++ [XE]
++ [iM]
+reboot reason : UNKNOWN 
+-
++ [XE]
+reboot reason : UNKNOWN 
+-
++ [XE]
+reboot reason : UNKNOWN 
+-
++ [XE]
+reboot reason : UNKNOWN 
+-
++ [^z]
+reboot reason : UNKNOWN 
+-
++ [XE]
+reboot reason : UNKNOWN 
+-
++ [XE]
+reboot reason : UNKNOWN 
+-
++ [XE]
+reboot reason : UNKNOWN 
+-
++ [IV]
+reboot reason : UNKNOWN 
+-
++ [XE]
+reboot reason : UNKNOWN 
+-
++ [XE]
+reboot reason : UNKNOWN 
+-
++ [Jv]
+--wipe_cache
+--delete_efs_ota
+reboot reason : UNKNOWN 
+-
++ [Ru]
+reboot reason : UNKNOWN 
+-
++ [xk]
+--wipe_cache
+--delete_efs_ota
+reboot reason : UNKNOWN 
+-
++ [xd]
+--wipe_cache
+--delete_efs_ota
+reboot reason : UNKNOWN 
+-
++ [F_]
+reboot reason : UNKNOWN 
+-
++ [Rg]
+--wipe_cache
+--delete_efs_ota
+reboot reason : UNKNOWN 
+-
++ [TT]
+--delete_efs_ota
+--data_resizing
+--delete_apn_changes
+reboot reason : UNKNOWN 
+-
++ [zf]
+--delete_efs_ota
+--data_resizing
+--delete_apn_changes
+reboot reason : UNKNOWN 
+-
++ [he]
+reboot reason : UNKNOWN 
+-
++ [DY]
+--delete_efs_ota
+--data_resizing
+--delete_apn_changes
+reboot reason : UNKNOWN 
+-
++ [kt]
+reboot reason : UNKNOWN 
+-
++ [cv]
+reboot reason : UNKNOWN 
+-
++ [Xg]
+--delete_efs_ota
+--data_resizing
+--delete_apn_changes
+reboot reason : UNKNOWN 
+-
++ [aX]
+reboot reason : UNKNOWN 
+-
++ [lF]
+--wipe_data
+--reason=CryptKeeper.showFactoryReset() corrupt=4
+--locale=ko-KR
+reboot reason : UNKNOWN 
+-
++ [co]
+reboot reason : UNKNOWN 
+-
++ [vT]
+reboot reason : UNKNOWN 
+-
++ [Os]
+reboot reason : UNKNOWN 
+-
++ [Mt]
+--delete_efs_ota
+--data_resizing
+--delete_apn_changes
+reboot reason : UNKNOWN 
+-
++ [Ad]
+--delete_efs_ota
+--data_resizing
+--delete_apn_changes
+reboot reason : UNKNOWN 
+-
++ [Nd]
+--wipe_data
+--reason=MasterClearConfirm
+--locale=ko-KR
+reboot reason : UNKNOWN 
+-
++ [Ag]
+--delete_efs_ota
+--data_resizing
+--delete_apn_changes
+reboot reason : UNKNOWN 
+-
++ [ys]
+reboot reason : UNKNOWN 
+-
++ [V^]
+reboot reason : UNKNOWN 
+-
++ [HV]
+reboot reason : UNKNOWN 
+-
++ [oG]
+reboot reason : UNKNOWN 
+-
++ [Ou]
+reboot reason : UNKNOWN 
+-
++ [`Q]
+reboot reason : UNKNOWN 
+-
++ [It]
+reboot reason : UNKNOWN 
+-
++ [s_]
+--wipe_cache
+--delete_efs_ota
+reboot reason : UNKNOWN 
+-
++ [cX]
+reboot reason : UNKNOWN 
+-
++ [uR]
+--delete_efs_ota
+--data_resizing
+--delete_apn_changes
+reboot reason : UNKNOWN 
+-
++ [uC]
+reboot reason : UNKNOWN 
+-
++ [tD]
+--wipe_data
+--reason=CryptKeeper.showFactoryReset() corrupt=4
+--locale=ko-KR
+reboot reason : UNKNOWN 
+-
++ [pF]
+reboot reason : UNKNOWN 
+-
++ [d^]
+--delete_efs_ota
+--data_resizing
+--delete_apn_changes
+reboot reason : UNKNOWN 
+-
++ [yt]
+--delete_efs_ota
+--data_resizing
+--delete_apn_changes
+reboot reason : UNKNOWN 
+-
++ [pM]
+--delete_efs_ota
+--data_resizing
+--delete_apn_changes
+reboot reason : UNKNOWN 
+-
++ [vX]
+--wipe_cache
+--delete_efs_ota
+reboot reason : UNKNOWN 
+-
++ [mj]
+--wipe_cache
+--delete_efs_ota
+reboot reason : UNKNOWN 
+-
++ [ob]
+reboot reason : UNKNOWN 
+-
++ [mA]
+reboot reason : UNKNOWN 
+-
++ [Sj]
+--delete_efs_ota
+--data_resizing
+--delete_apn_changes
+reboot reason : UNKNOWN 
+-
++ [dM]
+--wipe_data
+--reason=CryptKeeper.showFactoryReset() corrupt=4
+--locale=ko-KR
+reboot reason : UNKNOWN 
+-
++ [dh]
+reboot reason : UNKNOWN 
+-
++ [Ze]
+--wipe_data
+--reason=MasterClearConfirm
+--locale=ko-KR
+reboot reason : UNKNOWN 
+-
++ [rk]
+reboot reason : UNKNOWN 
+-
++ [kT]
+reboot reason : UNKNOWN 
+-
++ [hP]
+reboot reason : UNKNOWN 
+-
++ [n[]
+reboot reason : UNKNOWN 
+-
++ [A`]
+reboot reason : UNKNOWN 
+-
++ [oh]
+--delete_efs_ota
+--data_resizing
+--delete_apn_changes
+reboot reason : UNKNOWN 
+-
++ [KN]
+reboot reason : UNKNOWN 
+-
++ [[K]
+reboot reason : UNKNOWN 
+-
++ [WW]
+reboot reason : UNKNOWN 
+-
++ [dR]
+reboot reason : UNKNOWN 
+-
++ [VB]
+reboot reason : UNKNOWN 
+-
++ [FQ]
+--delete_efs_ota
+--data_resizing
+--delete_apn_changes
+reboot reason : UNKNOWN 
+-
++ [z_]
+reboot reason : UNKNOWN 
+-
++ [Ok]
+reboot reason : UNKNOWN 
+-
++ [at]
+reboot reason : UNKNOWN 
+-
++ [OE]
+reboot reason : UNKNOWN 
+-
++ [Wo]
+reboot reason : UNKNOWN 
+-
++ [TY]
+reboot reason : UNKNOWN 
+-
++ [vS]
+reboot reason : UNKNOWN 
+-
++ [VK]
+reboot reason : UNKNOWN 
+-
++ [e^]
+--delete_efs_ota
+--data_resizing
+--delete_apn_changes
+reboot reason : UNKNOWN 
+-
++ [Vb]
+--delete_efs_ota
+--data_resizing
+--delete_apn_changes
+reboot reason : UNKNOWN 
+-
++ [^W]
+reboot reason : UNKNOWN 
+-
++ [hw]
+reboot reason : UNKNOWN 
+-
++ [[Q]
+reboot reason : UNKNOWN 
+-
++ [GZ]
+reboot reason : UNKNOWN 
+-
++ [p^]
+--delete_efs_ota
+--data_resizing
+--delete_apn_changes
+reboot reason : UNKNOWN 
+-
++ [[m]
+--delete_efs_ota
+--data_resizing
+--delete_apn_changes
+reboot reason : UNKNOWN 
+-
++ [_\]
+--delete_efs_ota
+--data_resizing
+--delete_apn_changes
+reboot reason : UNKNOWN 
+-
++ [yL]
+reboot reason : UNKNOWN 
+-
++ [S\]
+--delete_efs_ota
+--data_resizing
+--delete_apn_changes
+reboot reason : UNKNOWN 
+-
++ [fK]
+--wipe_data
+--reason=MasterClearConfirm
+--locale=ko-KR
+reboot reason : UNKNOWN 
+-
++ [xM]
+reboot reason : UNKNOWN 
+-
++ [pe]
+reboot reason : UNKNOWN 
+-
++ [qU]
+reboot reason : UNKNOWN 
+-
++ [_J]
+reboot reason : UNKNOWN 
+-
++ [Yy]
+reboot reason : UNKNOWN 
+-
++ [Yj]
+reboot reason : UNKNOWN 
+-
++ [Ba]
+--delete_efs_ota
+--data_resizing
+--delete_apn_changes
+reboot reason : UNKNOWN 
+-
++ [k_]
+reboot reason : UNKNOWN 
+-
++ [Fz]
+reboot reason : UNKNOWN 
+-
++ [yx]
+reboot reason : UNKNOWN 
+-
++ [RJ]
+reboot reason : UNKNOWN 
+-
++ [Lp]
+reboot reason : UNKNOWN 
+-
++ [rV]
+--delete_efs_ota
+--data_resizing
+--delete_apn_changes
+reboot reason : UNKNOWN 
+-
++ [Lp]
+reboot reason : UNKNOWN 
+-
++ [mN]
+reboot reason : UNKNOWN 
+-
++ [Ln]
+reboot reason : UNKNOWN 
+-
++ [so]
+reboot reason : UNKNOWN 
+-
++ []N]
+reboot reason : UNKNOWN 
+-
++ [`P]
+reboot reason : UNKNOWN 
+-
++ [wT]
+reboot reason : UNKNOWN 
+-
++ [PT]
+reboot reason : UNKNOWN 
+-
++ [cl]
+reboot reason : UNKNOWN 
+-
++ [vU]
+reboot reason : UNKNOWN 
+-
++ [Ub]
+reboot reason : UNKNOWN 
+-
++ [JN]
+reboot reason : UNKNOWN 
+-
++ [Lw]
+reboot reason : UNKNOWN 
+-
++ [yp]
+reboot reason : UNKNOWN 
+-
++ [xd]
+reboot reason : UNKNOWN 
+-
++ [zE]
+reboot reason : UNKNOWN 
+-
++ [wQ]
+reboot reason : UNKNOWN 
+-
++ [rx]
+reboot reason : UNKNOWN 
+-
++ [RJ]
+reboot reason : UNKNOWN 
+-
++ [kD]
+reboot reason : UNKNOWN 
+-
++ [D[]
+reboot reason : UNKNOWN 
+-
++ [Rh]
+reboot reason : UNKNOWN 
+-
++ [Gh]
+reboot reason : UNKNOWN 
+-
++ [aU]
+reboot reason : UNKNOWN 
+-
++ [bR]
+reboot reason : UNKNOWN 
+-
++ [Zd]
+reboot reason : UNKNOWN 
+-
++ [WN]
+reboot reason : UNKNOWN 
+-
++ [uH]
+reboot reason : UNKNOWN 
+-
++ [qt]
+reboot reason : UNKNOWN 
+-
++ [Pj]
+reboot reason : UNKNOWN 
+-
++ [C_]
+reboot reason : UNKNOWN 
+-
++ [rq]
+reboot reason : UNKNOWN 
+-
++ [nk]
+reboot reason : UNKNOWN 
+-
++ [bT]
+reboot reason : UNKNOWN 
+-
++ [lR]
+reboot reason : UNKNOWN 
+-

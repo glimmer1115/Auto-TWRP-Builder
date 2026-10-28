@@ -1,0 +1,21 @@
+--- dmesg OOM/kill ---
+--- free/df ---
+               total        used        free      shared  buff/cache   available
+Mem:            15Gi       631Mi       5.5Gi        40Mi       9.5Gi        14Gi
+Swap:           18Gi       151Mi        18Gi
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/root       146G  119G   28G  82% /
+Summary:
+  Hits:            11953 / 11953 (100.0 %)
+    Direct:        11905 / 11953 (99.60 %)
+    Preprocessed:     48 /    48 (100.0 %)
+  Misses:              0
+    Direct:           48
+    Preprocessed:      0
+  Uncacheable:         4
+Primary storage:
+  Hits:            23858 / 23906 (99.80 %)
+  Misses:             48
+  Cache size (GB):  0.60 /  5.00 (12.08 %)
+
+Use the -v/--verbose option for more details.
