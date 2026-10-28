@@ -346,8 +346,8 @@ jobs:
           file "$IMAGE"
           sha256sum "$IMAGE"
 
-      - name: Package OrangeFox recovery tar
-        id: package
+      - name: Package OrangeFox recovery image
+        id: package_image
         if: steps.build.outcome == 'success'
         working-directory: ${{ env.WS }}/out/target/product/gtaxladwifikx
         run: |
@@ -357,6 +357,44 @@ jobs:
             --stock "${WS}/recovery.img" \
             --built recovery-built.img \
             --output recovery.img
+
+      - name: Validate final ramdisk size
+        id: ramdisk_limit
+        if: steps.package_image.outcome == 'success'
+        working-directory: ${{ env.WS }}/out/target/product/gtaxladwifikx
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import struct
+          from pathlib import Path
+
+          limit = 14680064
+          image = Path("recovery.img").read_bytes()
+          if len(image) < 44 or image[:8] != b"ANDROID!":
+              raise SystemExit("final recovery.img has an invalid Android boot header")
+          fields = struct.unpack_from("<9I", image, 8)
+          kernel_size = fields[0]
+          ramdisk_size = fields[2]
+          headroom = limit - ramdisk_size
+          excess = max(0, -headroom)
+          print("kernel_size:", kernel_size)
+          print("ramdisk_size:", ramdisk_size)
+          print("ramdisk_limit:", limit)
+          print("ramdisk_headroom:", headroom)
+          print("ramdisk_excess:", excess)
+          if excess:
+              raise SystemExit(
+                  "final compressed ramdisk exceeds the SM-T583 S-Boot limit "
+                  f"by {excess} bytes"
+              )
+          PY
+
+      - name: Package OrangeFox recovery tar
+        id: package
+        if: steps.ramdisk_limit.outcome == 'success'
+        working-directory: ${{ env.WS }}/out/target/product/gtaxladwifikx
+        run: |
+          set -euo pipefail
           tar -H ustar -cf recovery.tar recovery.img
           mapfile -t tar_entries < <(tar -tf recovery.tar)
           if [ "${#tar_entries[@]}" -ne 1 ] || [ "${tar_entries[0]}" != "recovery.img" ]; then
