@@ -8,6 +8,7 @@ from pathlib import Path
 PARTITION_SIZE = 39845888
 TRAILER = b"SEANDROIDENFORCE"
 BUILD_METADATA = {"ramdisk-files.txt", "ramdisk-files.sha256sum"}
+CPIO_BLOCK_SIZE = 512
 
 
 def parse_image(data):
@@ -94,6 +95,7 @@ def rewrite_cpio(data):
         raise ValueError("CPIO trailer is missing")
     if any(data[offset:]):
         raise ValueError("non-zero data follows the CPIO trailer")
+    output.extend(b"\0" * (-len(output) % CPIO_BLOCK_SIZE))
     return bytes(output), removed
 
 
