@@ -1,1 +1,0 @@
- --os_version 8.0.0 --os_patch_level 2020-06 --kernel ./recovery/kernel --ramdisk ./recovery/ramdisk --pagesize 0x00000800 --dt ./recovery/dt --base 0x00000000 --kernel_offset 0x10008000 --ramdisk_offset 0x11000000 --second_offset 0x10f00000 --tags_offset 0x10000100 --board SRPRA23C001RU
