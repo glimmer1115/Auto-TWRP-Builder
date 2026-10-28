@@ -378,16 +378,25 @@ jobs:
             out/target/product/gtaxladwifikx/recovery.img \
             --limit 14680064
 
+      - name: Slim recovery image
+        id: slim_recovery
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: ${{ env.WS }}
+        run: |
+          set -euo pipefail
+          python3 "${GITHUB_WORKSPACE}/scripts/slim_recovery.py" \
+            --input out/target/product/gtaxladwifikx/recovery.img \
+            --output out/target/product/gtaxladwifikx/recovery-slim.img
+
       - name: Package OrangeFox recovery image
         id: package_image
-        if: steps.build.outcome == 'success'
+        if: steps.slim_recovery.outcome == 'success'
         working-directory: ${{ env.WS }}/out/target/product/gtaxladwifikx
         run: |
           set -euo pipefail
-          cp recovery.img recovery-built.img
           python3 "${GITHUB_WORKSPACE}/scripts/package_recovery.py" \
             --stock "${WS}/recovery.img" \
-            --built recovery-built.img \
+            --built recovery-slim.img \
             --output recovery.img \
             --analysis-report "${GITHUB_WORKSPACE}/ramdisk-analysis.json" \
             --ramdisk-limit 14680064
