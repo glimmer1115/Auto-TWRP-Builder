@@ -26,13 +26,15 @@ pr = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(pr)
 
 REMOVE_PATHS = {
-    "system/bin/update_engine_sideload", 
-    "system/lib/libicui18n.so",      # 추가됨 (1.0MB 절감)
-    "system/lib/libicuuc.so",        # 추가됨 (0.7MB 절감)
-    # "system/bin/adbd",             # 주석 처리 (ADB 연결 보존)
-    # "system/lib/libadbd_services.so", # 주석 처리
+    "system/bin/update_engine_sideload",
+    "system/bin/adbd",                 # <--- 주석 풀기
+    "system/lib/libadbd_services.so",  # <--- 주석 풀기
+    "system/lib/libicui18n.so",        # <--- 추가 유지
+    "system/lib/libicuuc.so",          # <--- 추가 유지
     "system/bin/bash",
-    "system/bin/nano", "system/bin/toolbox", "sbin/bash",
+    "system/bin/nano", 
+    "system/bin/toolbox", 
+    "sbin/bash",
 }
 REMOVE_PREFIXES = ("system/etc/terminfo/", "system/etc/nano/")
 KEEP_FONTS = {"roboto-regular.ttf", "roboto-medium.ttf"}
