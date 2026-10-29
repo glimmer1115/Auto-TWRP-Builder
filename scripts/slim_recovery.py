@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
 """
-slim_recovery.py (V21) — recovery.img 램디스크 물리 슬리밍
+slim_recovery.py (V21.1) — recovery.img 램디스크 물리 슬리밍
 
-V20 대비 변경점
- 1. [버그] ICU/libadbd_services 가 REMOVE_PATHS 에 들어 있어 NEEDED 검사 결과와 무관하게
-    무조건 삭제되던 문제 수정 → 남은 ELF 가 참조하지 않을 때만 삭제(고정점 반복).
- 2. [안전] 삭제로 인해 심볼릭 링크가 끊기면 보고하고, sh/getprop 같은 핵심 링크면 중단.
- 3. [안전] 하드링크 삭제 시 데이터 보유 엔트리를 지워 형제 엔트리가 빈 파일이 되는 경우 건너뜀.
- 4. [수정] 폰트 참조 스캔을 twres/**/*.xml 전체로 확대(경로 접두사 불일치 시 폰트가 영원히
-    안 지워지던 무동작 위험 제거) + 스캔/삭제 결과를 로그에 출력.
- 5. [개선] readelf 의존 제거(순수 파이썬 ELF 파서), 입력 램디스크 gzip/xz/lzma/raw 자동 판별,
-    카테고리별 절감량 + --limit 대비 여유 출력.
+V21 대비 변경점
+ 1. [오탐 수정] toolbox 심볼릭 링크(getprop 등) 보호를 위해 REMOVE_FILES에서 toolbox 제외.
+ 2. [용량 확보] libicu 연쇄 삭제를 위해 libandroidicu.so를 OPTIONAL_LIBS에 추가.
  - 출력 이미지의 SHA-1 은 갱신하지 않음 (패키저 입력 전용)
 """
 import argparse
@@ -29,7 +23,7 @@ from pathlib import Path
 
 _here = Path(__file__).resolve().parent
 sys.path.insert(0, str(_here))
-import ramdisk_report as rr  # noqa: E402  (elf_needed, decompress_ramdisk, resolve_link)
+import ramdisk_report as rr  # noqa: E402
 
 _pr_path = _here / "package_recovery.py"
 _spec = importlib.util.spec_from_file_location("package_recovery", _pr_path)
@@ -42,13 +36,20 @@ REMOVE_FILES = {
     "system/bin/adbd",
     "system/bin/bash",
     "system/bin/nano",
-    "system/bin/toolbox",
+    # "system/bin/toolbox",  # <--- [오탐 방지] getprop/setprop 링크 보호를 위해 제거 안 함
     "sbin/bash",
 }
 REMOVE_PREFIXES = ("system/etc/terminfo/", "system/etc/nano/")
 
 # 라이브러리: 남아 있는 어떤 ELF 도 NEEDED 로 참조하지 않을 때만 제거
-OPTIONAL_LIB_NAMES = ("libadbd_services.so", "libicui18n.so", "libicuuc.so", "libicudata.so")
+# libandroidicu.so 를 추가하여 libicuuc/libicui18n 의 연쇄 삭제를 유도함
+OPTIONAL_LIB_NAMES = (
+    "libadbd_services.so",
+    "libicui18n.so",
+    "libicuuc.so",
+    "libicudata.so",
+    "libandroidicu.so",  # <--- [용량 확보] 추가됨
+)
 OPTIONAL_LIBS = {d + n for d in ("system/lib/", "system/lib64/") for n in OPTIONAL_LIB_NAMES}
 
 KEEP_FONTS = {"roboto-regular.ttf", "roboto-medium.ttf"}
@@ -71,7 +72,7 @@ E = namedtuple("E", "raw norm header name_bytes data mode nlink size key")
 
 def wrap(t):
     raw, norm, header, name_bytes, data, mode, nlink, size = t
-    key = (bytes(header[6:14]), bytes(header[62:70]), bytes(header[70:78]))  # ino, devmajor, devminor
+    key = (bytes(header[6:14]), bytes(header[62:70]), bytes(header[70:78]))
     return E(raw, norm, header, name_bytes, data, mode, nlink, size, key)
 
 
@@ -107,7 +108,7 @@ def strip_elf_data(data, strip_tool):
             print("WARNING: strip 후 ELF 구조 손상됨. 원본 유지.")
         else:
             print(f"WARNING: strip 실패 (code {res.returncode}). 원본 유지.")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         print(f"WARNING: strip 예외: {exc}. 원본 유지.")
     finally:
         if os.path.exists(tmp_path):
@@ -117,7 +118,6 @@ def strip_elf_data(data, strip_tool):
 
 # ----------------------------------------------------------------------------- fonts
 def find_referenced_fonts(ents):
-    """twres/**/*.xml 이 참조하는 .ttf 이름 집합. 하나라도 파싱 실패하면 None(=폰트 삭제 안 함)."""
     xmls = [e for e in ents if is_reg(e) and is_twres_xml(e.norm)]
     if not xmls:
         print("폰트 스캔: twres/ 아래 XML 이 없습니다 → 폰트는 삭제하지 않습니다.")
@@ -140,7 +140,6 @@ def find_referenced_fonts(ents):
 
 # ----------------------------------------------------------------------------- planning
 def hardlink_safe_to_drop(e, groups, removed):
-    """newc 하드링크는 데이터가 한 엔트리에만 있을 수 있다. 그 엔트리를 지우면 형제가 빈 파일이 된다."""
     if e.nlink <= 1 or e.size == 0:
         return True
     sibs = [s for s in groups.get(e.key, []) if s is not e and s.norm not in removed]
@@ -153,7 +152,7 @@ def policy_reason(e, referenced_fonts):
     if e.norm in REMOVE_FILES:
         return "explicit"
     if e.nlink > 1:
-        return None  # 접두사/폰트 규칙은 하드링크 보호 (V20 동작 유지)
+        return None
     if any(e.norm.startswith(p) for p in REMOVE_PREFIXES):
         return "prefix"
     if e.norm.startswith("twres/fonts/") and e.norm.endswith(".ttf"):
@@ -173,7 +172,6 @@ def plan_removals(ents, referenced_fonts):
         if e.nlink > 1:
             groups[e.key].append(e)
 
-    # 1단계: 정책 기반
     for e in ents:
         if e.raw == "TRAILER!!!":
             continue
@@ -181,11 +179,10 @@ def plan_removals(ents, referenced_fonts):
         if not reason:
             continue
         if not hardlink_safe_to_drop(e, groups, removed):
-            print(f"WARNING: {e.norm} 은(는) 하드링크 데이터 보유 엔트리라 삭제를 건너뜁니다.")
+            print(f"WARNING: {e.norm} 은(는) 하드링크 데이터 보유 엘리먼트라 삭제를 건너뜁니다.")
             continue
         removed[e.norm] = reason
 
-    # 2단계: 선택적 라이브러리 — 남은 ELF 의 NEEDED 가 참조하지 않을 때만 (고정점 반복)
     needs = {}
     for e in ents:
         if is_reg(e) and e.data[:4] == b"\x7fELF":
@@ -227,7 +224,6 @@ def plan_removals(ents, referenced_fonts):
 
 
 def check_dangling(ents, removed, allow):
-    """삭제된 파일을 가리키게 된 심볼릭 링크를 보고. 핵심 링크면 중단(allow 가 아니면)."""
     hits = []
     for e in ents:
         if e.norm in removed or stat.S_IFMT(e.mode) != stat.S_IFLNK:
