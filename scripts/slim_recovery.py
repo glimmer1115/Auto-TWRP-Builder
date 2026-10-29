@@ -1,18 +1,10 @@
 #!/usr/bin/env python3
 """
-slim_recovery.py (V18) — Strict physical slimming of recovery.img
-
-⚠️ 이 스크립트가 보장하는 것:
-  - Fail-Closed ELF 검사: readelf 부재/실패 또는 의존성 검사 실패 시 ICU 제거 취소
-  - 제한된 STRIP_TARGETS만 strip 수행 (llvm-strip 등 안전한 도구 사용)
-  - CPIO 070701 매직 준수, trailer 보존 및 4바이트/512바이트 정렬
-  - 정규 파일(S_IFREG)만 strip 및 삭제 대상으로 삼음 (하드링크/심볼릭 링크 보호)
-
-⚠️ 이 스크립트가 보장하지 않는 것:
-  - strip 후 실제 Android 런타임 실행 가능성 (readelf 구조 검사는 런타임 보장 아님)
-  - dlopen() 동적 로딩 의존성
-  - 출력물(recovery-slim.img)의 부트 헤더 SHA-1은 미갱신됨.
-    반드시 package_recovery.py의 --built 입력으로만 사용하고 직접 플래시 금지.
+slim_recovery.py (V19 Final) — recovery.img 물리적 슬리밍
+- Fail-Closed ELF 검사: readelf 부재/실패 시 ICU 제거 및 strip 취소
+- 070701 CPIO만 허용, 하드링크/심볼릭 링크 완벽 보호
+- llvm-strip 사용, strip 후 ELF 구조 무결성 재검사
+- 출력 파일의 SHA-1은 갱신하지 않음 (반드시 package_recovery.py 입력으로만 사용)
 """
 import argparse
 import gzip
@@ -42,7 +34,7 @@ REMOVE_PREFIXES = ("system/etc/terminfo/", "system/etc/nano/")
 KEEP_FONTS = {"roboto-regular.ttf", "roboto-medium.ttf"}
 ICU_LIBS = {"system/lib/libicuuc.so", "system/lib/libicui18n.so", "system/lib/libicudata.so"}
 
-# 🔥 Strip을 적용할 대상 경로 제한
+# [중요] Strip을 적용할 타겟 (이 파일들만 디버그 심볼 제거)
 STRIP_TARGETS = {
     "system/bin/recovery", "system/bin/init", "system/bin/linker",
     "sbin/magiskboot",
@@ -67,13 +59,11 @@ def should_remove(path, mode, link_count, remove_icu, referenced_fonts):
     return False
 
 def find_safe_strip_tool():
-    """ARM 아키텍처를 안전하게 처리할 수 있는 크로스 컴파일 strip 도구를 찾습니다."""
     if shutil.which("llvm-strip"): return "llvm-strip"
     if shutil.which("arm-linux-gnueabi-strip"): return "arm-linux-gnueabi-strip"
     return None
 
 def run_tool(cmd):
-    """외부 도구 실행 래퍼. 도구 부재/실패 시 None 반환 (Fail-Closed)"""
     if not shutil.which(cmd[0]): return None
     try:
         res = subprocess.run(cmd, capture_output=True, text=True)
@@ -82,7 +72,6 @@ def run_tool(cmd):
         return None
 
 def is_valid_elf_structure(data):
-    """readelf 구조 검사. 실패 시 False 반환 (Fail-Closed)"""
     if not shutil.which("readelf"): return False
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
         tmp.write(data)
@@ -93,7 +82,6 @@ def is_valid_elf_structure(data):
         if os.path.exists(tmp_path): os.remove(tmp_path)
 
 def get_needed(elf_data):
-    """동적 DT_NEEDED 목록 추출. 도구 실패 시 None 반환 (Fail-Closed)"""
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
         tmp.write(elf_data)
         tmp_path = tmp.name
@@ -114,7 +102,7 @@ def strip_elf_data(data, strip_tool):
         if res.returncode == 0:
             with open(tmp_path, "rb") as f: new_data = f.read()
             if is_valid_elf_structure(new_data): return new_data
-            print(f"WARNING: strip 후 ELF 구조 손상됨 (Fail-Closed). 원본 유지.")
+            print(f"WARNING: strip 후 ELF 구조 손상됨. 원본 유지.")
         else:
             print(f"WARNING: strip 실패 (code {res.returncode}). 원본 유지.")
     except Exception as exc:
@@ -157,7 +145,7 @@ def main():
     xml_paths = {e["path"] for e in inv if e["type"] == "file" and is_theme_xml(e["path"])}
     referenced_fonts = find_referenced_fonts(cpio, xml_paths)
 
-    # 🔥 [Fail-Closed 복구] 1차 패스: 모든 ELF 의존성 전수 조사
+    # 1차 패스: ICU 의존성 전수 조사 (Fail-Closed)
     icu_in_needed, check_failed, failed_file, elfs_checked = False, False, None, 0
     for _, norm_name, _, _, entry_data, _, _, _ in pr.iter_cpio_entries(cpio):
         if entry_data[:4] == b"\x7fELF":
@@ -172,13 +160,13 @@ def main():
 
     print(f"ELF 의존성 검사: {elfs_checked}개 진행")
     if check_failed:
-        print(f"WARNING: ELF 검사 실패 위치: {failed_file}. Fail-Closed에 의해 ICU 제거를 취소합니다.")
+        print(f"WARNING: ELF 검사 실패 위치: {failed_file}. ICU 제거 취소.")
         remove_icu = False
     elif icu_in_needed:
-        print("WARNING: libicu가 NEEDED에 존재합니다. ICU 제거를 취소합니다.")
+        print("WARNING: libicu가 NEEDED에 존재. ICU 제거 취소.")
         remove_icu = False
     else:
-        print("ICU 정적 의존성 검사 통과. ICU 제거를 진행합니다.")
+        print("ICU 정적 의존성 검사 통과. ICU 제거 진행.")
         remove_icu = True
 
     strip_tool = find_safe_strip_tool()

@@ -118,7 +118,6 @@ jobs:
           set -euo pipefail
           export GIT_ASKPASS="$RUNNER_TEMP/git-askpass.sh"
           export GIT_TERMINAL_PROMPT=0
-          # repo는 비TTY에서 진행률을 출력하지 않으므로 디스크 사용량을 주기적으로 남깁니다.
           ( while true; do sleep 60; echo "sync-heartbeat $(date +%T) used=$(df -Pm / | awk 'NR==2 {print $3}')MB"; done ) &
           HEARTBEAT=$!
           trap 'kill "$HEARTBEAT" 2>/dev/null || true' EXIT
@@ -128,7 +127,6 @@ jobs:
           echo "repo sync 소요: $(( $(date +%s) - SYNC_START ))초, 프로젝트 수: $(repo list | wc -l)"
           { du -sm .repo; du -sm -- */ | sort -rn | awk 'NR<=15'; echo '--- prebuilts 하위 ---'; du -sm -- prebuilts/*/ | sort -rn | awk 'NR<=20'; } || true
           cp /tmp/orangefox-manifest.xml "${GITHUB_WORKSPACE}/orangefox-manifest.xml"
-          # 실행 40456463445에서 out 디렉터리가 남은 10 GiB를 초과해 디스크가 100%가 되어 Runner.Worker가 종료됐습니다.
           rm -rf .repo/projects .repo/project-objects cts prebuilts/abi-dumps
           df -h /
 
@@ -180,7 +178,6 @@ jobs:
           fi
           python3 - <<'PY'
           from pathlib import Path
-
           image = Path("recovery.img").read_bytes()
           if image[:8] != b"ANDROID!":
               raise SystemExit("입력 파일이 Android boot/recovery 이미지가 아닙니다.")
@@ -193,11 +190,9 @@ jobs:
         working-directory: ${{ env.WS }}
         run: |
           set -euo pipefail
-          # 값은 SM-T583 T583KOU1BTG1 기기 recovery 로그(iteration-107)에서 확인한 값입니다.
           python3 "${GITHUB_WORKSPACE}/scripts/build.py" -i recovery.img -o device \
             --default-prop ro.product.first_api_level=26 \
             --default-prop ro.build.version.security_patch=2020-06-01
-          # 스텝 출력은 이 스텝이 끝난 뒤에야 읽히므로 생성된 디렉터리를 직접 확인합니다.
           if [ ! -f device/samsung/gtaxladwifikx/Android.bp ]; then
             echo "::error::입력 이미지에서 SM-T583 트리를 생성하지 못했습니다."
             ls -R device | head -50 || true
@@ -235,7 +230,6 @@ jobs:
             echo "::error::lunch product 이름이 twrp_${CODENAME}이 아닙니다."
             exit 1
           fi
-          # 따옴표와 공백이 든 PRIVATE_BUILD_DESC가 Soong extra.variables JSON을 깨뜨렸습니다(실행 40465745686, line 40 column 30).
           sed -i '/^PRODUCT_BUILD_PROP_OVERRIDES += \\$/{N;/PRIVATE_BUILD_DESC=/d}' "twrp_${CODENAME}.mk"
           if grep -Fq PRIVATE_BUILD_DESC "twrp_${CODENAME}.mk"; then
             echo "::error::PRIVATE_BUILD_DESC를 제거하지 못했습니다."
@@ -248,7 +242,6 @@ jobs:
           import struct
           import sys
           from pathlib import Path
-
           image = Path(sys.argv[1]).read_bytes()
           if len(image) < 44 or image[:8] != b"ANDROID!":
               raise SystemExit("Android boot image header가 올바르지 않습니다.")
@@ -270,9 +263,7 @@ jobs:
           {
             printf '\nDEVICE_PATH := %s\n' "$TREE"
             cat "${GITHUB_WORKSPACE}/overrides/BoardConfig.mk"
-            # Android 16 build/make rejects armv7-a-neon for 32-bit ARM targets.
             printf '\nTARGET_ARCH_VARIANT := armv8-a\n'
-            # 따옴표가 포함된 값이 soong extra.variables에 그대로 기록되어 JSON이 깨졌습니다(실행 40476124388, RecoveryPixelFormat).
             printf 'TARGET_RECOVERY_PIXEL_FORMAT := ABGR_8888\n'
           } >> BoardConfig.mk
           sed -E -i '/^[[:space:]]*TARGET_USES_64_BIT_BINDER[[:space:]]*:?=/d' BoardConfig.mk
@@ -315,15 +306,12 @@ jobs:
           export ALLOW_MISSING_DEPENDENCIES=true
           export FOX_BUILD_DEVICE=gtaxladwifikx
           export LC_ALL=C
-          # 컴파일 출력(약 1시간)을 다음 실행에 재사용합니다. 경로가 같아야 캐시가 적중합니다.
           export USE_CCACHE=1 CCACHE_EXEC=/usr/bin/ccache CCACHE_DIR=/tmp/ccache CCACHE_MAXSIZE=6G
           export CCACHE_BASEDIR=/tmp/orangefox CCACHE_NOHASHDIR=true CCACHE_COMPILERCHECK=string:clang-r547379
           mkdir -p "$CCACHE_DIR"
           ccache -s | head -5 || true
           ccache -z
-          # envsetup.sh/lunch/mka reference unset variables (e.g. BUILD_VAR_CACHE_READY), so nounset must stay off.
           set +u
-          # soong_ui가 soong_build를 `env -i`로 실행해 GOGC/GOMEMLIMIT 환경변수가 전달되지 않으므로(실행 40476124388 로그) 소스에 직접 넣습니다.
           SB_MAIN=build/soong/cmd/soong_build/main.go
           if ! grep -q 'debug.SetMemoryLimit' "$SB_MAIN"; then
             grep -q '"runtime/debug"' "$SB_MAIN" || sed -i '0,/^import (/s//import (\n\t"runtime\/debug"/' "$SB_MAIN"
@@ -346,16 +334,52 @@ jobs:
           file "$IMAGE"
           sha256sum "$IMAGE"
 
+      - name: Inspect recovery root payload
+        if: always()
+        working-directory: ${{ env.WS }}
+        run: |
+          set -euo pipefail
+          ROOT="out/target/product/gtaxladwifikx/recovery/root"
+          if [ ! -d "$ROOT" ]; then
+            ROOT="out/target/product/gtaxladwifikx/root"
+          fi
+          echo "ROOT=$ROOT"
+          if [ ! -d "$ROOT" ]; then
+            echo "::warning::recovery root payload not found"
+            exit 0
+          fi
+          echo "--- top dirs ---"
+          du -sm "$ROOT"/* 2>/dev/null | sort -rn | head -40 || true
+          echo "--- largest files ---"
+          find "$ROOT" -type f -printf '%s %p\n' | sort -rn | head -100 | \
+            awk '{size=$1; sub(/^[^ ]+ /, ""); printf "%.2f MiB %s\n", size/1048576, $0}' || true
+
+      # ==============================================================
+      # ▼▼▼ 신규 추가: 슬리밍 스텝 ▼▼▼
+      # ==============================================================
+      - name: Slim recovery image (strip + remove)
+        id: slim_recovery
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        working-directory: ${{ env.WS }}
+        run: |
+          set -euo pipefail
+          echo "=== Running physical slimming ==="
+          python3 "${GITHUB_WORKSPACE}/scripts/slim_recovery.py" \
+            --input out/target/product/gtaxladwifikx/recovery.img \
+            --output out/target/product/gtaxladwifikx/recovery-slim.img
+
+      # ==============================================================
+      # ▼▼▼ 수정: --built 인자를 recovery-slim.img 로 변경 ▼▼▼
+      # ==============================================================
       - name: Package OrangeFox recovery image
         id: package_image
-        if: steps.build.outcome == 'success'
+        if: steps.slim_recovery.outcome == 'success'
         working-directory: ${{ env.WS }}/out/target/product/gtaxladwifikx
         run: |
           set -euo pipefail
-          cp recovery.img recovery-built.img
           python3 "${GITHUB_WORKSPACE}/scripts/package_recovery.py" \
             --stock "${WS}/recovery.img" \
-            --built recovery-built.img \
+            --built recovery-slim.img \
             --output recovery.img \
             --analysis-report "${GITHUB_WORKSPACE}/ramdisk-analysis.json" \
             --ramdisk-limit 14680064
@@ -369,7 +393,6 @@ jobs:
           python3 - <<'PY'
           import struct
           from pathlib import Path
-
           limit = 14680064
           image = Path("recovery.img").read_bytes()
           if len(image) < 44 or image[:8] != b"ANDROID!":
@@ -410,6 +433,68 @@ jobs:
             exit 1
           fi
           sha256sum recovery.img recovery.tar
+
+      - name: Print ramdisk analysis summary
+        if: always()
+        working-directory: ${{ env.WS }}
+        run: |
+          set -euo pipefail
+          REPORT="${GITHUB_WORKSPACE}/ramdisk-analysis.json"
+          if [ ! -f "$REPORT" ]; then
+            echo "::warning::ramdisk-analysis.json not found"
+            exit 0
+          fi
+          python3 - "$REPORT" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+          report = Path(sys.argv[1])
+          try:
+            data = json.loads(report.read_text())
+          except (OSError, json.JSONDecodeError) as exc:
+            print(f"::warning::Unable to read ramdisk analysis: {exc}")
+            raise SystemExit(0)
+          if not isinstance(data, dict):
+            print("::warning::ramdisk analysis has an unexpected format")
+            raise SystemExit(0)
+          print("--- ramdisk analysis summary ---")
+          for key in (
+            "source_ramdisk_bytes",
+            "source_cpio_bytes",
+            "packaged_cpio_bytes",
+            "packaged_ramdisk_bytes",
+            "ramdisk_limit_bytes",
+            "headroom_bytes",
+            "excess_bytes",
+          ):
+            if key in data:
+              print(f"{key}: {data[key]}")
+          entries = data.get("entries", [])
+          if isinstance(entries, list):
+            files = [
+              item for item in entries
+              if isinstance(item, dict) and item.get("type") == "file"
+            ]
+            print("--- top payload files ---")
+            for item in sorted(
+              files,
+              key=lambda item: int(item.get("size_bytes", 0) or 0),
+              reverse=True,
+            )[:30]:
+              print(
+                f"{item.get('size_bytes', 0)} bytes "
+                f"{item.get('path', '<unknown>')}"
+              )
+          for key in (
+            "largest_file_single_removals",
+            "largest_file_cumulative_removals",
+          ):
+            items = data.get(key, [])
+            if isinstance(items, list):
+              print(f"--- {key} ---")
+              for item in items[:30]:
+                print(json.dumps(item, sort_keys=True))
+          PY
 
       - name: Collect failure diagnostics
         if: always()
@@ -469,7 +554,6 @@ jobs:
           format: markdown
           message: |
             🎉 *OrangeFox 리커버리 빌드 성공!*
-
             ✨ 빌드가 정상적으로 완료되었습니다.
             딸깍용 장난감에 올릴 준비를 하세요! 🚀
 
@@ -483,5 +567,4 @@ jobs:
           format: markdown
           message: |
             🚨 *OrangeFox 빌드 실패 (에러 발생)*
-
             빌드 로그와 업로드된 진단 아티팩트를 확인해 주세요.
