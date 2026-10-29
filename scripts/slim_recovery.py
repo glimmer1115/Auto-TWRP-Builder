@@ -49,11 +49,12 @@ def is_theme_xml(path):
     return path.endswith(".xml") and (path.startswith("twres/themes/") or path.startswith("twres/resources/"))
 
 def should_remove(path, mode, link_count, remove_icu, referenced_fonts):
-    if path == "TRAILER!!!" or link_count > 1: return False
     ftype = stat.S_IFMT(mode)
+    # [수정] REMOVE_PATHS에 있는 건 하드링크(link_count) 상관없이 무조건 삭제!
     if path in REMOVE_PATHS: return ftype == stat.S_IFREG
+    
+    if path == "TRAILER!!!" or link_count > 1: return False
     for p in REMOVE_PREFIXES:
-        if path.startswith(p): return ftype == stat.S_IFREG
     if remove_icu and path in ICU_LIBS: return ftype == stat.S_IFREG
     if path.startswith("twres/fonts/"):
         if ftype != stat.S_IFREG or not path.endswith(".ttf"): return False
