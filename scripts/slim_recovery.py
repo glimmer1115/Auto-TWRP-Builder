@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-slim_recovery.py (V22 Final) — recovery.img 램디스크 물리 슬리밍
+slim_recovery.py (V25) — recovery.img 램디스크 물리 슬리밍
 - toolbox 심볼릭 링크 보호
 - libandroidicu.so 연쇄 삭제 유도
 - 경로 정규화(./) 적용 및 출력 이미지 사후 검증(False Pass 방지)
+- [V25] adb 및 perfetto 라이브러리를 무조건 삭제(REMOVE_FILES)로 강제 이동하여 용량 확보 극대화
 """
 import argparse
 import importlib.util
@@ -28,31 +29,31 @@ _spec = importlib.util.spec_from_file_location("package_recovery", _pr_path)
 pr = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(pr)
 
+# 무조건 삭제(정확 일치). minadbd를 먼저 지워야 adb 계열 라이브러리가 연쇄 삭제된다.
 REMOVE_FILES = {
     "system/bin/update_engine_sideload",
     "system/bin/adbd",
+    "system/bin/minadbd",
     "system/bin/bash",
     "system/bin/nano",
     # "system/bin/toolbox",  # <--- [오탐 방지] 절대 삭제 금지 (getprop 등 필수 링크)
     "sbin/bash",
-}
-# 추가할 삭제 타겟 리스트
-REMOVE_TARGETS = [
-    # 1. ADB 관련 (인계문서에 adbd 삭제됨)
+    
+    # [V25 핵심 수정] ADB 및 Perfetto 관련 라이브러리 강제 삭제 (의존성 무시)
     "system/lib/libadbconnection_server.so",
     "system/lib/libadb_protos.so",
     "system/lib/libadbd_auth.so",
-    "system/bin/minadbd",
-    "system/bin/adbd",
-    
-    # 2. Perfetto 트레이싱
     "system/lib/libperfetto_c.so",
-    
-    # 3. 안 쓰는 예전 UI 리소스
-    "res",  # 폴더째로 삭제하거나, "res/images" 지정
-    ]
-REMOVE_PREFIXES = ("system/etc/terminfo/", "system/etc/nano/")
+}
 
+# 접두사 일치 삭제 (일반 파일만 대상). "res/"는 "twres/"와 겹치지 않는다.
+REMOVE_PREFIXES = (
+    "system/etc/terminfo/",
+    "system/etc/nano/",
+    "res/",  # [V23] AOSP 스톡 리커버리 리소스 (OrangeFox는 twres 사용)
+)
+
+# 다른 ELF가 NEEDED로 참조하지 않을 때만 삭제되는 선택적 라이브러리
 OPTIONAL_LIB_NAMES = (
     "libadbd_services.so",
     "libicui18n.so",
@@ -146,7 +147,7 @@ def hardlink_safe_to_drop(e, groups, removed):
 def policy_reason(e, referenced_fonts):
     if not is_reg(e):
         return None
-        
+
     # [핵심] 경로 정규화 (앞에 붙은 ./, / 제거)
     clean_path = e.norm
     if clean_path.startswith("./"): clean_path = clean_path[2:]
@@ -190,11 +191,11 @@ def plan_removals(ents, referenced_fonts):
         if is_reg(e) and e.data[:4] == b"\x7fELF":
             needs[e.norm] = rr.elf_needed(e.data)
     print(f"ELF 의존성 검사: {len(needs)}개 분석")
-    
+
     bad = [p for p, v in needs.items() if v is None]
     cands = [e for e in ents if e.norm in OPTIONAL_LIBS and is_reg(e)]
     kept_refs = {}
-    
+
     if bad:
         print(f"WARNING: ELF 파싱 실패 {len(bad)}개(예: {bad[0]}) → 선택적 라이브러리는 모두 유지합니다.")
     else:
@@ -219,7 +220,7 @@ def plan_removals(ents, referenced_fonts):
                 removed[e.norm] = "unused-lib"
                 kept_refs.pop(e.norm, None)
                 changed = True
-                
+
     for e in cands:
         if e.norm not in removed:
             refs = kept_refs.get(e.norm, [])
@@ -339,7 +340,7 @@ def main():
     args.output.write_bytes(new_img)
     print(f"슬리밍 이미지 저장 완료: {args.output}")
 
-    # [추가] 조용한 실패 방지: 결과물에 삭제 대상이 남아있는지 최종 검증
+    # 조용한 실패 방지: 결과물에 삭제 대상이 남아있는지 최종 검증
     names = {t[1] for t in pr.iter_cpio_entries(rr.decompress_ramdisk(new_ramdisk))}
     left = sorted(REMOVE_FILES & names)
     if left:
