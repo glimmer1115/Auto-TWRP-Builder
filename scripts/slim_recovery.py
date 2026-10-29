@@ -27,10 +27,10 @@ _spec.loader.exec_module(pr)
 
 REMOVE_PATHS = {
     "system/bin/update_engine_sideload",
-    "system/bin/adbd",                 # <--- 주석 풀기
-    "system/lib/libadbd_services.so",  # <--- 주석 풀기
-    "system/lib/libicui18n.so",        # <--- 추가 유지
-    "system/lib/libicuuc.so",          # <--- 추가 유지
+    "system/bin/adbd",
+    "system/lib/libadbd_services.so",
+    "system/lib/libicui18n.so",
+    "system/lib/libicuuc.so",
     "system/bin/bash",
     "system/bin/nano", 
     "system/bin/toolbox", 
@@ -49,27 +49,41 @@ def is_theme_xml(path):
     return path.endswith(".xml") and (path.startswith("twres/themes/") or path.startswith("twres/resources/"))
 
 def should_remove(path, mode, link_count, remove_icu, referenced_fonts):
+    # [핵심 수정] CPIO 내부 경로의 './' 또는 '/'를 제거하여 매칭률 100% 달성
+    clean_path = path
+    if clean_path.startswith("./"): 
+        clean_path = clean_path[2:]
+    elif clean_path.startswith("/"): 
+        clean_path = clean_path[1:]
+
     ftype = stat.S_IFMT(mode)
     
     # 1. 우리가 추가한 경로는 하드링크 여부 상관없이 무조건 삭제!
-    if path in REMOVE_PATHS: return ftype == stat.S_IFREG
-    
-    # 2. TRAILER와 시스템 보호용 하드링크는 살림
-    if path == "TRAILER!!!" or link_count > 1: return False
-    
-    # 3. 접두사(prefix) 매칭 (이 부분이 지워져서 에러가 났던 겁니다)
-    for p in REMOVE_PREFIXES:
-        if path.startswith(p): return ftype == stat.S_IFREG
+    if clean_path in REMOVE_PATHS: 
+        return ftype == stat.S_IFREG
         
+    # 2. TRAILER와 시스템 보호용 하드링크는 살림
+    if clean_path == "TRAILER!!!" or link_count > 1: 
+        return False
+        
+    # 3. 접두사(prefix) 매칭
+    for p in REMOVE_PREFIXES:
+        if clean_path.startswith(p): 
+            return ftype == stat.S_IFREG
+            
     # 4. ICU 제거
-    if remove_icu and path in ICU_LIBS: return ftype == stat.S_IFREG
+    if remove_icu and clean_path in ICU_LIBS: 
+        return ftype == stat.S_IFREG
     
     # 5. 폰트 제거 로직
-    if path.startswith("twres/fonts/"):
-        if ftype != stat.S_IFREG or not path.endswith(".ttf"): return False
-        basename = path.rsplit("/", 1)[-1].lower()
-        if referenced_fonts is None: return False
-        if basename in referenced_fonts: return False
+    if clean_path.startswith("twres/fonts/"):
+        if ftype != stat.S_IFREG or not clean_path.endswith(".ttf"): 
+            return False
+        basename = clean_path.rsplit("/", 1)[-1].lower()
+        if referenced_fonts is None: 
+            return False
+        if basename in referenced_fonts: 
+            return False
         return basename not in KEEP_FONTS
         
     return False
