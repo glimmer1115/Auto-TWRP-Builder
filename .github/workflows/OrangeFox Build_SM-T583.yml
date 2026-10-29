@@ -346,9 +346,8 @@ jobs:
             --input out/target/product/gtaxladwifikx/recovery.img \
             --output out/target/product/gtaxladwifikx/recovery-slim.img \
             2>&1 | tee "${GITHUB_WORKSPACE}/slim-run.log"
-
       - name: Ramdisk top contributors
-        if: ${{ !cancelled() && steps.slim_recovery.outcome == 'success' }}
+        if: ${{ always() && steps.slim_recovery.outcome != 'skipped' }}
         continue-on-error: true
         working-directory: ${{ env.WS }}/out/target/product/gtaxladwifikx
         run: |
@@ -452,24 +451,33 @@ jobs:
 
       - name: Upload build diagnostics
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: orangefox-sm-t583-diagnostics
           if-no-files-found: warn
           path: |
-            orangefox-build.log
-            orangefox-manifest.xml
-            ramdisk-analysis.json
-            slim-run.log
-            ramdisk-top.log
-            mem-monitor.log
-            diagnostics.log
-            soong.log
+            *.log
+            *.log.gz
+            *.xml
+            *.json
             soong.*.extra.variables
-            verbose.log.gz
+            **/soong.log
+            **/verbose.log.gz
+            **/ramdisk-top.log
+            **/slim-run.log
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            ${{ github.workspace }}/*.log
+            ${{ env.WS }}/out/target/product/gtaxladwifikx/*.log
+          if-no-files-found: warn   
 
       - name: Notify Telegram on build success
-        if: always() && steps.build.outcome == 'success'
+        if: always() && steps.package.outcome == 'success'
         continue-on-error: true
         uses: appleboy/telegram-action@390cf7345777cd821dba28c72f436a78bce19cc5
         with:
