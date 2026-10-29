@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """
-slim_recovery.py (V21.1) — recovery.img 램디스크 물리 슬리밍
-
-V21 대비 변경점
- 1. [오탐 수정] toolbox 심볼릭 링크(getprop 등) 보호를 위해 REMOVE_FILES에서 toolbox 제외.
- 2. [용량 확보] libicu 연쇄 삭제를 위해 libandroidicu.so를 OPTIONAL_LIBS에 추가.
- - 출력 이미지의 SHA-1 은 갱신하지 않음 (패키저 입력 전용)
+slim_recovery.py (V22 Final) — recovery.img 램디스크 물리 슬리밍
+- toolbox 심볼릭 링크 보호
+- libandroidicu.so 연쇄 삭제 유도
+- 경로 정규화(./) 적용 및 출력 이미지 사후 검증(False Pass 방지)
 """
 import argparse
 import importlib.util
@@ -23,32 +21,29 @@ from pathlib import Path
 
 _here = Path(__file__).resolve().parent
 sys.path.insert(0, str(_here))
-import ramdisk_report as rr  # noqa: E402
+import ramdisk_report as rr
 
 _pr_path = _here / "package_recovery.py"
 _spec = importlib.util.spec_from_file_location("package_recovery", _pr_path)
 pr = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(pr)
 
-# 실행 파일/스크립트: 무조건 제거 대상 (하드링크 안전 규칙은 적용)
 REMOVE_FILES = {
     "system/bin/update_engine_sideload",
     "system/bin/adbd",
     "system/bin/bash",
     "system/bin/nano",
-    # "system/bin/toolbox",  # <--- [오탐 방지] getprop/setprop 링크 보호를 위해 제거 안 함
+    # "system/bin/toolbox",  # <--- [오탐 방지] 절대 삭제 금지 (getprop 등 필수 링크)
     "sbin/bash",
 }
 REMOVE_PREFIXES = ("system/etc/terminfo/", "system/etc/nano/")
 
-# 라이브러리: 남아 있는 어떤 ELF 도 NEEDED 로 참조하지 않을 때만 제거
-# libandroidicu.so 를 추가하여 libicuuc/libicui18n 의 연쇄 삭제를 유도함
 OPTIONAL_LIB_NAMES = (
     "libadbd_services.so",
     "libicui18n.so",
     "libicuuc.so",
     "libicudata.so",
-    "libandroidicu.so",  # <--- [용량 확보] 추가됨
+    "libandroidicu.so",  # <--- [핵심] 얘를 지워야 ICU 연쇄 삭제됨
 )
 OPTIONAL_LIBS = {d + n for d in ("system/lib/", "system/lib64/") for n in OPTIONAL_LIB_NAMES}
 
@@ -59,7 +54,6 @@ STRIP_TARGETS = {
     "sbin/magiskboot",
 }
 
-# 삭제로 이 이름의 심볼릭 링크가 끊기면 부팅/스크립트가 깨질 가능성이 커서 중단
 CRITICAL_LINK_NAMES = {
     "sh", "ash", "getprop", "setprop", "start", "stop", "init", "linker", "linker64",
     "recovery", "toybox", "busybox", "ls", "cat", "mount", "umount", "sleep", "grep",
@@ -69,28 +63,22 @@ CRITICAL_LINK_NAMES = {
 
 E = namedtuple("E", "raw norm header name_bytes data mode nlink size key")
 
-
 def wrap(t):
     raw, norm, header, name_bytes, data, mode, nlink, size = t
     key = (bytes(header[6:14]), bytes(header[62:70]), bytes(header[70:78]))
     return E(raw, norm, header, name_bytes, data, mode, nlink, size, key)
 
-
 def is_reg(e):
     return stat.S_IFMT(e.mode) == stat.S_IFREG
-
 
 def is_twres_xml(path):
     return path.startswith("twres/") and path.endswith(".xml")
 
-
-# ----------------------------------------------------------------------------- strip
 def find_safe_strip_tool():
     for tool in ("llvm-strip", "arm-linux-gnueabi-strip"):
         if shutil.which(tool):
             return tool
     return None
-
 
 def strip_elf_data(data, strip_tool):
     if data[:4] != b"\x7fELF" or not strip_tool:
@@ -115,12 +103,9 @@ def strip_elf_data(data, strip_tool):
             os.remove(tmp_path)
     return data
 
-
-# ----------------------------------------------------------------------------- fonts
 def find_referenced_fonts(ents):
     xmls = [e for e in ents if is_reg(e) and is_twres_xml(e.norm)]
     if not xmls:
-        print("폰트 스캔: twres/ 아래 XML 이 없습니다 → 폰트는 삭제하지 않습니다.")
         return None
     refs = set()
     for e in xmls:
@@ -137,33 +122,35 @@ def find_referenced_fonts(ents):
     print(f"폰트 스캔: XML {len(xmls)}개, 참조된 폰트 {len(refs)}종")
     return refs
 
-
-# ----------------------------------------------------------------------------- planning
 def hardlink_safe_to_drop(e, groups, removed):
     if e.nlink <= 1 or e.size == 0:
         return True
     sibs = [s for s in groups.get(e.key, []) if s is not e and s.norm not in removed]
     return not any(s.size == 0 for s in sibs)
 
-
 def policy_reason(e, referenced_fonts):
     if not is_reg(e):
         return None
-    if e.norm in REMOVE_FILES:
+        
+    # [핵심] 경로 정규화 (앞에 붙은 ./, / 제거)
+    clean_path = e.norm
+    if clean_path.startswith("./"): clean_path = clean_path[2:]
+    elif clean_path.startswith("/"): clean_path = clean_path[1:]
+
+    if clean_path in REMOVE_FILES:
         return "explicit"
     if e.nlink > 1:
         return None
-    if any(e.norm.startswith(p) for p in REMOVE_PREFIXES):
+    if any(clean_path.startswith(p) for p in REMOVE_PREFIXES):
         return "prefix"
-    if e.norm.startswith("twres/fonts/") and e.norm.endswith(".ttf"):
+    if clean_path.startswith("twres/fonts/") and clean_path.endswith(".ttf"):
         if referenced_fonts is None:
             return None
-        base = e.norm.rsplit("/", 1)[-1].lower()
+        base = clean_path.rsplit("/", 1)[-1].lower()
         if base in referenced_fonts or base in KEEP_FONTS:
             return None
         return "font"
     return None
-
 
 def plan_removals(ents, referenced_fonts):
     removed = {}
@@ -188,9 +175,11 @@ def plan_removals(ents, referenced_fonts):
         if is_reg(e) and e.data[:4] == b"\x7fELF":
             needs[e.norm] = rr.elf_needed(e.data)
     print(f"ELF 의존성 검사: {len(needs)}개 분석")
+    
     bad = [p for p, v in needs.items() if v is None]
     cands = [e for e in ents if e.norm in OPTIONAL_LIBS and is_reg(e)]
     kept_refs = {}
+    
     if bad:
         print(f"WARNING: ELF 파싱 실패 {len(bad)}개(예: {bad[0]}) → 선택적 라이브러리는 모두 유지합니다.")
     else:
@@ -215,13 +204,13 @@ def plan_removals(ents, referenced_fonts):
                 removed[e.norm] = "unused-lib"
                 kept_refs.pop(e.norm, None)
                 changed = True
+                
     for e in cands:
         if e.norm not in removed:
             refs = kept_refs.get(e.norm, [])
             why = f"참조: {', '.join(refs[:3])}{' ...' if len(refs) > 3 else ''}" if refs else "검사 불가"
             print(f"  유지: {e.norm} ({why})")
     return removed
-
 
 def check_dangling(ents, removed, allow):
     hits = []
@@ -241,20 +230,16 @@ def check_dangling(ents, removed, allow):
         sys.exit("오류: 핵심 링크가 끊어집니다: " + ", ".join(critical[:10]) +
                  "\n  → 해당 대상 파일을 REMOVE_FILES 에서 빼거나 --allow-dangling 으로 무시하세요.")
 
-
-# ----------------------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True, type=Path)
     ap.add_argument("--output", required=True, type=Path)
-    ap.add_argument("--limit", type=int, default=None, help="램디스크(압축) 한도 bytes — 로그에 여유만 출력")
-    ap.add_argument("--allow-dangling", action="store_true", help="핵심 링크가 끊어져도 계속")
+    ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--allow-dangling", action="store_true")
     args = ap.parse_args()
 
     if args.input.resolve() == args.output.resolve():
         sys.exit("오류: 입출력 경로 동일")
-    if args.output.exists() and os.path.samefile(args.input, args.output):
-        sys.exit("오류: 입출력 파일 동일")
 
     data = args.input.read_bytes()
     parsed = pr.parse_image(data)
@@ -338,8 +323,17 @@ def main():
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_bytes(new_img)
     print(f"슬리밍 이미지 저장 완료: {args.output}")
-    print("⚠️ 부트 헤더 SHA-1 미갱신. 직접 플래시 금지, 패키저 입력으로만 사용하세요.")
 
+    # [추가] 조용한 실패 방지: 결과물에 삭제 대상이 남아있는지 최종 검증
+    names = {t[1] for t in pr.iter_cpio_entries(rr.decompress_ramdisk(new_ramdisk))}
+    left = sorted(REMOVE_FILES & names)
+    if left:
+        print(f"오류: 삭제 대상이 슬림 이미지에 남아 있습니다: {', '.join(left)}")
+        sys.exit(1)
+    else:
+        print("검증 완료: 삭제 대상 파일이 모두 제거되었습니다.")
+
+    print("⚠️ 부트 헤더 SHA-1 미갱신. 직접 플래시 금지, 패키저 입력으로만 사용하세요.")
 
 if __name__ == "__main__":
     main()

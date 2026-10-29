@@ -43,7 +43,7 @@ jobs:
             libxml2-utils lzop pngcrush python3 python3-pip rsync schedtool \
             squashfs-tools unzip xsltproc zip zlib1g-dev \
             binutils-arm-linux-gnueabi
-          python3 -m pip install --user -U twrpdtgen
+          python3 -m pip install --user -U twrpdtgen zopfli
 
       - name: Install Java and repo
         uses: actions/setup-java@v6
@@ -347,6 +347,14 @@ jobs:
             --output out/target/product/gtaxladwifikx/recovery-slim.img \
             2>&1 | tee "${GITHUB_WORKSPACE}/slim-run.log"
 
+      - name: Ramdisk top contributors
+        if: ${{ !cancelled() && steps.slim_recovery.outcome == 'success' }}
+        continue-on-error: true
+        working-directory: ${{ env.WS }}/out/target/product/gtaxladwifikx
+        run: |
+          set -euo pipefail
+          python3 "${GITHUB_WORKSPACE}/scripts/ramdisk_top.py" --image recovery-slim.img 2>&1 | tee "${GITHUB_WORKSPACE}/ramdisk-top.log"
+
       - name: Package OrangeFox recovery image
         id: package_image
         if: steps.slim_recovery.outcome == 'success'
@@ -450,9 +458,10 @@ jobs:
           if-no-files-found: warn
           path: |
             orangefox-build.log
-            slim-run.log
             orangefox-manifest.xml
             ramdisk-analysis.json
+            slim-run.log
+            ramdisk-top.log
             mem-monitor.log
             diagnostics.log
             soong.log
