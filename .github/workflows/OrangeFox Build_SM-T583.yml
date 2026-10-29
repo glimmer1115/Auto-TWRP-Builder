@@ -41,7 +41,8 @@ jobs:
             git gnupg gperf imagemagick lib32readline-dev lib32z1-dev libelf-dev \
             liblz4-tool libncurses5-dev libncursesw5-dev libssl-dev libxml2 \
             libxml2-utils lzop pngcrush python3 python3-pip rsync schedtool \
-            squashfs-tools unzip xsltproc zip zlib1g-dev
+            squashfs-tools unzip xsltproc zip zlib1g-dev \
+            binutils-arm-linux-gnueabi
           python3 -m pip install --user -U twrpdtgen
 
       - name: Install Java and repo
@@ -334,29 +335,6 @@ jobs:
           file "$IMAGE"
           sha256sum "$IMAGE"
 
-      - name: Inspect recovery root payload
-        if: always()
-        working-directory: ${{ env.WS }}
-        run: |
-          set -euo pipefail
-          ROOT="out/target/product/gtaxladwifikx/recovery/root"
-          if [ ! -d "$ROOT" ]; then
-            ROOT="out/target/product/gtaxladwifikx/root"
-          fi
-          echo "ROOT=$ROOT"
-          if [ ! -d "$ROOT" ]; then
-            echo "::warning::recovery root payload not found"
-            exit 0
-          fi
-          echo "--- top dirs ---"
-          du -sm "$ROOT"/* 2>/dev/null | sort -rn | head -40 || true
-          echo "--- largest files ---"
-          find "$ROOT" -type f -printf '%s %p\n' | sort -rn | head -100 | \
-            awk '{size=$1; sub(/^[^ ]+ /, ""); printf "%.2f MiB %s\n", size/1048576, $0}' || true
-
-      # ==============================================================
-      # ▼▼▼ 신규 추가: 슬리밍 스텝 ▼▼▼
-      # ==============================================================
       - name: Slim recovery image (strip + remove)
         id: slim_recovery
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
@@ -368,9 +346,6 @@ jobs:
             --input out/target/product/gtaxladwifikx/recovery.img \
             --output out/target/product/gtaxladwifikx/recovery-slim.img
 
-      # ==============================================================
-      # ▼▼▼ 수정: --built 인자를 recovery-slim.img 로 변경 ▼▼▼
-      # ==============================================================
       - name: Package OrangeFox recovery image
         id: package_image
         if: steps.slim_recovery.outcome == 'success'
@@ -433,68 +408,6 @@ jobs:
             exit 1
           fi
           sha256sum recovery.img recovery.tar
-
-      - name: Print ramdisk analysis summary
-        if: always()
-        working-directory: ${{ env.WS }}
-        run: |
-          set -euo pipefail
-          REPORT="${GITHUB_WORKSPACE}/ramdisk-analysis.json"
-          if [ ! -f "$REPORT" ]; then
-            echo "::warning::ramdisk-analysis.json not found"
-            exit 0
-          fi
-          python3 - "$REPORT" <<'PY'
-          import json
-          import sys
-          from pathlib import Path
-          report = Path(sys.argv[1])
-          try:
-            data = json.loads(report.read_text())
-          except (OSError, json.JSONDecodeError) as exc:
-            print(f"::warning::Unable to read ramdisk analysis: {exc}")
-            raise SystemExit(0)
-          if not isinstance(data, dict):
-            print("::warning::ramdisk analysis has an unexpected format")
-            raise SystemExit(0)
-          print("--- ramdisk analysis summary ---")
-          for key in (
-            "source_ramdisk_bytes",
-            "source_cpio_bytes",
-            "packaged_cpio_bytes",
-            "packaged_ramdisk_bytes",
-            "ramdisk_limit_bytes",
-            "headroom_bytes",
-            "excess_bytes",
-          ):
-            if key in data:
-              print(f"{key}: {data[key]}")
-          entries = data.get("entries", [])
-          if isinstance(entries, list):
-            files = [
-              item for item in entries
-              if isinstance(item, dict) and item.get("type") == "file"
-            ]
-            print("--- top payload files ---")
-            for item in sorted(
-              files,
-              key=lambda item: int(item.get("size_bytes", 0) or 0),
-              reverse=True,
-            )[:30]:
-              print(
-                f"{item.get('size_bytes', 0)} bytes "
-                f"{item.get('path', '<unknown>')}"
-              )
-          for key in (
-            "largest_file_single_removals",
-            "largest_file_cumulative_removals",
-          ):
-            items = data.get(key, [])
-            if isinstance(items, list):
-              print(f"--- {key} ---")
-              for item in items[:30]:
-                print(json.dumps(item, sort_keys=True))
-          PY
 
       - name: Collect failure diagnostics
         if: always()

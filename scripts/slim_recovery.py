@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-slim_recovery.py (V19 Final) — recovery.img 물리적 슬리밍
-- Fail-Closed ELF 검사: readelf 부재/실패 시 ICU 제거 및 strip 취소
-- 070701 CPIO만 허용, 하드링크/심볼릭 링크 완벽 보호
-- llvm-strip 사용, strip 후 ELF 구조 무결성 재검사
-- 출력 파일의 SHA-1은 갱신하지 않음 (반드시 package_recovery.py 입력으로만 사용)
+slim_recovery.py (V20 Final) — Strict physical slimming of recovery.img
+- Fail-Closed ELF 검사
+- 070701 CPIO만 허용
+- llvm-strip 또는 arm-linux-gnueabi-strip 강제 사용
+- 출력 파일의 SHA-1은 갱신하지 않음 (패키저 입력 전용)
 """
 import argparse
 import gzip
@@ -34,7 +34,6 @@ REMOVE_PREFIXES = ("system/etc/terminfo/", "system/etc/nano/")
 KEEP_FONTS = {"roboto-regular.ttf", "roboto-medium.ttf"}
 ICU_LIBS = {"system/lib/libicuuc.so", "system/lib/libicui18n.so", "system/lib/libicudata.so"}
 
-# [중요] Strip을 적용할 타겟 (이 파일들만 디버그 심볼 제거)
 STRIP_TARGETS = {
     "system/bin/recovery", "system/bin/init", "system/bin/linker",
     "sbin/magiskboot",
@@ -59,8 +58,9 @@ def should_remove(path, mode, link_count, remove_icu, referenced_fonts):
     return False
 
 def find_safe_strip_tool():
-    if shutil.which("llvm-strip"): return "llvm-strip"
-    if shutil.which("arm-linux-gnueabi-strip"): return "arm-linux-gnueabi-strip"
+    for tool in ["llvm-strip", "arm-linux-gnueabi-strip"]:
+        if shutil.which(tool):
+            return tool
     return None
 
 def run_tool(cmd):
@@ -145,7 +145,6 @@ def main():
     xml_paths = {e["path"] for e in inv if e["type"] == "file" and is_theme_xml(e["path"])}
     referenced_fonts = find_referenced_fonts(cpio, xml_paths)
 
-    # 1차 패스: ICU 의존성 전수 조사 (Fail-Closed)
     icu_in_needed, check_failed, failed_file, elfs_checked = False, False, None, 0
     for _, norm_name, _, _, entry_data, _, _, _ in pr.iter_cpio_entries(cpio):
         if entry_data[:4] == b"\x7fELF":
