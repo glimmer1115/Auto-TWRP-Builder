@@ -36,6 +36,21 @@ REMOVE_FILES = {
     # "system/bin/toolbox",  # <--- [오탐 방지] 절대 삭제 금지 (getprop 등 필수 링크)
     "sbin/bash",
 }
+# 추가할 삭제 타겟 리스트
+REMOVE_TARGETS = [
+    # 1. ADB 관련 (인계문서에 adbd 삭제됨)
+    "system/lib/libadbconnection_server.so",
+    "system/lib/libadb_protos.so",
+    "system/lib/libadbd_auth.so",
+    "system/bin/minadbd",
+    "system/bin/adbd",
+    
+    # 2. Perfetto 트레이싱
+    "system/lib/libperfetto_c.so",
+    
+    # 3. 안 쓰는 예전 UI 리소스
+    "res",  # 폴더째로 삭제하거나, "res/images" 지정
+    ]
 REMOVE_PREFIXES = ("system/etc/terminfo/", "system/etc/nano/")
 
 OPTIONAL_LIB_NAMES = (
