@@ -26,8 +26,12 @@ pr = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(pr)
 
 REMOVE_PATHS = {
-    "system/bin/update_engine_sideload", "system/bin/adbd",
-    "system/lib/libadbd_services.so", "system/bin/bash",
+    "system/bin/update_engine_sideload", 
+    "system/lib/libicui18n.so",      # 추가됨 (1.0MB 절감)
+    "system/lib/libicuuc.so",        # 추가됨 (0.7MB 절감)
+    # "system/bin/adbd",             # 주석 처리 (ADB 연결 보존)
+    # "system/lib/libadbd_services.so", # 주석 처리
+    "system/bin/bash",
     "system/bin/nano", "system/bin/toolbox", "sbin/bash",
 }
 REMOVE_PREFIXES = ("system/etc/terminfo/", "system/etc/nano/")
