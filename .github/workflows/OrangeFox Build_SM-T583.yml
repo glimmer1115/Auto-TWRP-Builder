@@ -344,7 +344,8 @@ jobs:
           echo "=== Running physical slimming ==="
           python3 "${GITHUB_WORKSPACE}/scripts/slim_recovery.py" \
             --input out/target/product/gtaxladwifikx/recovery.img \
-            --output out/target/product/gtaxladwifikx/recovery-slim.img
+            --output out/target/product/gtaxladwifikx/recovery-slim.img \
+            2>&1 | tee "${GITHUB_WORKSPACE}/slim-run.log"
 
       - name: Package OrangeFox recovery image
         id: package_image
@@ -449,6 +450,7 @@ jobs:
           if-no-files-found: warn
           path: |
             orangefox-build.log
+            slim-run.log
             orangefox-manifest.xml
             ramdisk-analysis.json
             mem-monitor.log
