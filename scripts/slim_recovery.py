@@ -50,18 +50,28 @@ def is_theme_xml(path):
 
 def should_remove(path, mode, link_count, remove_icu, referenced_fonts):
     ftype = stat.S_IFMT(mode)
-    # [수정] REMOVE_PATHS에 있는 건 하드링크(link_count) 상관없이 무조건 삭제!
+    
+    # 1. 우리가 추가한 경로는 하드링크 여부 상관없이 무조건 삭제!
     if path in REMOVE_PATHS: return ftype == stat.S_IFREG
     
+    # 2. TRAILER와 시스템 보호용 하드링크는 살림
     if path == "TRAILER!!!" or link_count > 1: return False
+    
+    # 3. 접두사(prefix) 매칭 (이 부분이 지워져서 에러가 났던 겁니다)
     for p in REMOVE_PREFIXES:
+        if path.startswith(p): return ftype == stat.S_IFREG
+        
+    # 4. ICU 제거
     if remove_icu and path in ICU_LIBS: return ftype == stat.S_IFREG
+    
+    # 5. 폰트 제거 로직
     if path.startswith("twres/fonts/"):
         if ftype != stat.S_IFREG or not path.endswith(".ttf"): return False
         basename = path.rsplit("/", 1)[-1].lower()
         if referenced_fonts is None: return False
         if basename in referenced_fonts: return False
         return basename not in KEEP_FONTS
+        
     return False
 
 def find_safe_strip_tool():
