@@ -346,6 +346,48 @@ jobs:
             --input out/target/product/gtaxladwifikx/recovery.img \
             --output out/target/product/gtaxladwifikx/recovery-slim.img \
             2>&1 | tee "${GITHUB_WORKSPACE}/slim-run.log"
+
+      - name: Log slim ramdisk headroom
+        if: ${{ always() && steps.slim_recovery.outcome != 'skipped' }}
+        continue-on-error: true
+        working-directory: ${{ env.WS }}/out/target/product/gtaxladwifikx
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' 2>&1 | tee "${GITHUB_WORKSPACE}/slim-headroom.log"
+          import struct
+          from pathlib import Path
+          limit = 14680064
+
+          def parse(name):
+              p = Path(name)
+              if not p.is_file():
+                  return None
+              data = p.read_bytes()
+              if len(data) < 44 or data[:8] != b"ANDROID!":
+                  return None
+              fields = struct.unpack_from("<9I", data, 8)
+              return {"kernel": fields[0], "ramdisk": fields[2], "total": len(data)}
+
+          def report(label, info):
+              if info is None:
+                  print(f"{label}: (missing)")
+                  return
+              headroom = limit - info["ramdisk"]
+              excess = max(0, -headroom)
+              print(f"{label}: total={info['total']} kernel={info['kernel']} ramdisk={info['ramdisk']} headroom={headroom} excess={excess}")
+
+          pre = parse("recovery.img")
+          post = parse("recovery-slim.img")
+          print("ramdisk_limit:", limit)
+          report("pre_slim ", pre)
+          report("post_slim", post)
+          if pre and post:
+              print("slim_reduction:", pre["ramdisk"] - post["ramdisk"])
+          if post:
+              print("slim_headroom:", limit - post["ramdisk"])
+              print("slim_excess:", max(0, post["ramdisk"] - limit))
+          PY
+            
       - name: Ramdisk top contributors
         if: ${{ always() && steps.slim_recovery.outcome != 'skipped' }}
         continue-on-error: true
