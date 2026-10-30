@@ -49,7 +49,7 @@ jobs:
         uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
       - name: Install repo tool
         run: |
@@ -159,6 +159,24 @@ jobs:
               xargs -0 -r grep -nH -E 'name[[:space:]]*:[[:space:]]*"libfox_protocol_types"|libfox_protocol_types'
             echo "provider_search_exit=$?"
           } 2>&1 | tee "${GITHUB_WORKSPACE}/fox-protocol-pre-cleanup.log"
+
+          set -euo pipefail
+          FOXCLI=external/foxcli
+          expected_foxcli=288f5579550ebd0d5e6325c1844a65bd3fb42d8c
+          if [ ! -f "$FOXCLI/Android.bp" ]; then
+            echo "::error::external/foxcli/Android.bp를 찾지 못했습니다."
+            exit 1
+          fi
+          actual_foxcli="$(git -C "$FOXCLI" rev-parse HEAD)"
+          if [ "$actual_foxcli" != "$expected_foxcli" ]; then
+            echo "::error::foxcli checkout이 검증된 legacy protocol revision과 다릅니다."
+            exit 1
+          fi
+          if grep -q 'libfox_protocol_types' "$FOXCLI/Android.bp"; then
+            echo "::error::foxcli v2 protocol dependency가 감지되어 recovery source와 호환되지 않습니다."
+            exit 1
+          fi
+          echo "foxcli protocol compatibility check passed: $actual_foxcli"
 
           rm -rf .repo/projects .repo/project-objects cts prebuilts/abi-dumps
           df -h /
@@ -355,12 +373,12 @@ jobs:
             exit 1
           fi
           grep -n -B1 -A3 'debug.SetGCPercent' "$SB_MAIN"
-          
+
           source build/envsetup.sh
           lunch twrp_gtaxladwifikx-bp2a-eng
           export ORANGEFOX_RECOVERY_IMAGE_ONLY=1
           mka recoveryimage -j4 2>&1 | tee "${GITHUB_WORKSPACE}/orangefox-build.log"
-          
+
           IMAGE="out/target/product/gtaxladwifikx/recovery.img"
           if [ ! -s "$IMAGE" ]; then
             echo "::error::OrangeFox recovery.img 산출물을 찾지 못했습니다."
@@ -389,6 +407,15 @@ jobs:
               echo 'external/foxcli/Android.bp not found'
             fi
           } 2>&1 | tee "${GITHUB_WORKSPACE}/fox-protocol-debug.log"
+
+      - name: Reachability check
+        if: ${{ always() && steps.build.outcome == 'success' }}
+        continue-on-error: true
+        working-directory: ${{ env.WS }}/out/target/product/gtaxladwifikx
+        run: |
+          set -euo pipefail
+          python3 "${GITHUB_WORKSPACE}/scripts/reach_check.py" --image recovery.img \
+            2>&1 | tee "${GITHUB_WORKSPACE}/reach-check.log"
 
       - name: Slim recovery image (strip + remove)
         id: slim_recovery
@@ -442,7 +469,7 @@ jobs:
               print("slim_headroom:", limit - post["ramdisk"])
               print("slim_excess:", max(0, post["ramdisk"] - limit))
           PY
-            
+
       - name: Ramdisk top contributors
         if: ${{ always() && steps.slim_recovery.outcome != 'skipped' }}
         continue-on-error: true
@@ -571,7 +598,7 @@ jobs:
           path: |
             ${{ github.workspace }}/*.log
             ${{ env.WS }}/out/target/product/gtaxladwifikx/*.log
-          if-no-files-found: warn   
+          if-no-files-found: warn
 
       - name: Notify Telegram on build success
         if: success() && steps.package.outcome == 'success'
