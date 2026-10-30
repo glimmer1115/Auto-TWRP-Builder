@@ -12,6 +12,7 @@ from package_recovery import (
     analyze_ramdisk,
     compressed_breakdown,
     compress_cpio,
+    compress_cpio_best,
     decompress_ramdisk,
     rewrite_cpio,
 )
@@ -69,7 +70,7 @@ class RamdiskAnalysisTests(unittest.TestCase):
         cpio = cpio_archive(entries)
         ramdisk = gzip.compress(cpio, compresslevel=9, mtime=0)
         packaged_cpio, _ = rewrite_cpio(cpio)
-        packaged_size = len(compress_cpio(packaged_cpio))
+        packaged_size = len(compress_cpio_best(packaged_cpio))
 
         report = analyze_ramdisk(ramdisk, packaged_size, packaged_size - 1)
 
@@ -88,6 +89,10 @@ class RamdiskAnalysisTests(unittest.TestCase):
         simulation = report["largest_file_single_removals"][0]
         self.assertEqual(simulation["path"], "system/bin/large")
         self.assertGreater(simulation["reduction_bytes"], 0)
+        simulated_cpio, _ = rewrite_cpio(cpio, excluded_names={"system/bin/large"})
+        simulated_size = len(compress_cpio_best(simulated_cpio))
+        self.assertEqual(simulation["ramdisk_size_bytes"], simulated_size)
+        self.assertEqual(simulation["reduction_bytes"], packaged_size - simulated_size)
         self.assertIn("system/bin/large", report["largest_file_cumulative_removals"][0]["paths"])
         self.assertEqual(cpio, cpio_archive(entries))
 

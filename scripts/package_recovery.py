@@ -182,8 +182,7 @@ def analyze_ramdisk(blob, packaged_size, ramdisk_limit=RAMDISK_LIMIT, candidate_
     entries = []
     rewritten, removed = rewrite_cpio(cpio, inventory=entries)
     
-    # [수정] zopfli 적용 시 baseline과 packaged_size가 달라지는 것이 정상이므로 비교문 제거
-    baseline_size = len(compress_cpio(rewritten))
+    baseline_size = packaged_size
 
     directories = defaultdict(lambda: {"entry_count": 0, "payload_bytes": 0})
     for entry in entries:
@@ -218,7 +217,7 @@ def analyze_ramdisk(blob, packaged_size, ramdisk_limit=RAMDISK_LIMIT, candidate_
     single_removals = []
     for entry in candidates:
         simulated, _ = rewrite_cpio(cpio, excluded_names={entry["path"]})
-        simulated_size = len(compress_cpio(simulated))
+        simulated_size = len(compress_cpio_best(simulated))
         single_removals.append({
             "path": entry["path"],
             "input_payload_bytes": entry["size_bytes"],
@@ -233,7 +232,7 @@ def analyze_ramdisk(blob, packaged_size, ramdisk_limit=RAMDISK_LIMIT, candidate_
     for count in cumulative_counts:
         excluded = {entry["path"] for entry in candidates[:count]}
         simulated, _ = rewrite_cpio(cpio, excluded_names=excluded)
-        simulated_size = len(compress_cpio(simulated))
+        simulated_size = len(compress_cpio_best(simulated))
         cumulative_removals.append({
             "largest_files_removed": count,
             "paths": [entry["path"] for entry in candidates[:count]],
