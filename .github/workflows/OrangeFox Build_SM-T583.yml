@@ -324,12 +324,6 @@ jobs:
           fi
           grep -n -B1 -A3 'debug.SetGCPercent' "$SB_MAIN"
           
-          # [V26] foxcli 누락 의존성 우회 패치
-          FOXCLI_BP=external/foxcli/Android.bp
-          if [ -f "$FOXCLI_BP" ]; then
-            sed -i '/libfox_protocol_types/d' "$FOXCLI_BP"
-          fi
-
           source build/envsetup.sh
           lunch twrp_gtaxladwifikx-bp2a-eng
           export ORANGEFOX_RECOVERY_IMAGE_ONLY=1
