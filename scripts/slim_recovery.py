@@ -47,16 +47,22 @@ REMOVE_PREFIXES = (
     "res/",  # [V23] AOSP 스톡 리커버리 리소스 (OrangeFox는 twres 사용)
 )
 
-# 다른 ELF가 NEEDED로 참조하지 않을 때만 삭제되는 선택적 라이브러리
-OPTIONAL_LIB_NAMES = (
+# ADB candidates use executable-root reachability; other optional libs use direct NEEDED references.
+ADB_OPTIONAL_LIB_NAMES = (
+    "libadbd.so",
     "libadbd_services.so",
+    "libadbd_fs.so",
+    "libadb_crypto.so",
+    "libadbconnection_server.so",
+    "libadb_protos.so",
+    "libadbd_auth.so",
+)
+OPTIONAL_LIB_NAMES = (
+    *ADB_OPTIONAL_LIB_NAMES,
     "libicui18n.so",
     "libicuuc.so",
     "libicudata.so",
     "libandroidicu.so",  # <--- [핵심] 얘를 지워야 ICU 연쇄 삭제됨
-    "libadbconnection_server.so",
-    "libadb_protos.so",
-    "libadbd_auth.so",
     "libperfetto_c.so",
 )
 OPTIONAL_LIBS = {d + n for d in ("system/lib/", "system/lib64/") for n in OPTIONAL_LIB_NAMES}
@@ -195,9 +201,11 @@ def plan_removals(ents, referenced_fonts):
         removed[e.norm] = reason
 
     needs = {}
+    elf_entries = {}
     for e in ents:
         if is_reg(e) and e.data[:4] == b"\x7fELF":
             needs[e.norm] = rr.elf_needed(e.data)
+            elf_entries[e.norm] = e
     print(f"ELF 의존성 검사: {len(needs)}개 분석")
 
     bad = [p for p, v in needs.items() if v is None]
@@ -207,27 +215,49 @@ def plan_removals(ents, referenced_fonts):
     if bad:
         print(f"WARNING: ELF 파싱 실패 {len(bad)}개(예: {bad[0]}) → 선택적 라이브러리는 모두 유지합니다.")
     else:
-        changed = True
-        while changed:
-            changed = False
-            live = defaultdict(list)
-            for p, lst in needs.items():
-                if p in removed:
-                    continue
-                for n in lst:
-                    live[n].append(p)
-            for e in cands:
-                if e.norm in removed:
-                    continue
-                name = os.path.basename(e.norm)
-                if name in live:
-                    kept_refs[e.norm] = live[name]
-                    continue
-                if not hardlink_safe_to_drop(e, groups, removed):
-                    continue
-                removed[e.norm] = "unused-lib"
-                kept_refs.pop(e.norm, None)
-                changed = True
+        direct_refs = defaultdict(list)
+        for path, dependencies in needs.items():
+            if path in removed:
+                continue
+            for name in dependencies or []:
+                direct_refs[name].append(path)
+
+        by_name = defaultdict(list)
+        for path in elf_entries:
+            by_name[os.path.basename(path)].append(path)
+
+        pending = [
+            path for path, e in elf_entries.items()
+            if path not in removed and e.mode & 0o111
+        ]
+        live_paths = set()
+        reachable_refs = defaultdict(list)
+        while pending:
+            path = pending.pop()
+            if path in live_paths or path in removed:
+                continue
+            live_paths.add(path)
+            for name in needs[path] or []:
+                for target in by_name.get(name, ()):
+                    if target in removed:
+                        continue
+                    reachable_refs[target].append(path)
+                    pending.append(target)
+
+        for e in cands:
+            if e.norm in removed:
+                continue
+            name = os.path.basename(e.norm)
+            if name in ADB_OPTIONAL_LIB_NAMES:
+                refs = reachable_refs.get(e.norm, [])
+            else:
+                refs = direct_refs.get(name, [])
+            if refs:
+                kept_refs[e.norm] = refs
+                continue
+            if not hardlink_safe_to_drop(e, groups, removed):
+                continue
+            removed[e.norm] = "unused-lib"
 
     for e in cands:
         if e.norm not in removed:
