@@ -527,7 +527,7 @@ jobs:
           if-no-files-found: warn   
 
       - name: Notify Telegram on build success
-        if: always() && steps.package.outcome == 'success'
+        if: success() && steps.package.outcome == 'success'
         continue-on-error: true
         uses: appleboy/telegram-action@390cf7345777cd821dba28c72f436a78bce19cc5
         with:
@@ -535,9 +535,9 @@ jobs:
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           format: markdown
           message: |
-            🎉 *OrangeFox 리커버리 빌드 성공!*
-            ✨ 빌드가 정상적으로 완료되었습니다.
-            딸깍용 장난감에 올릴 준비를 하세요! 🚀
+            *OrangeFox build succeeded.*
+            Artifact: `recovery.tar`
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
       - name: Notify Telegram on build failure
         if: always() && (cancelled() || failure())
@@ -548,5 +548,5 @@ jobs:
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           format: markdown
           message: |
-            🚨 *OrangeFox 빌드 실패 (에러 발생)*
-            빌드 로그와 업로드된 진단 아티팩트를 확인해 주세요.
+            *OrangeFox build failed.*
+            Review logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

@@ -4,7 +4,7 @@ slim_recovery.py (V25) — recovery.img 램디스크 물리 슬리밍
 - toolbox 심볼릭 링크 보호
 - libandroidicu.so 연쇄 삭제 유도
 - 경로 정규화(./) 적용 및 출력 이미지 사후 검증(False Pass 방지)
-- [V25] adb 및 perfetto 라이브러리를 무조건 삭제(REMOVE_FILES)로 강제 이동하여 용량 확보 극대화
+- ADB/Perfetto 라이브러리는 남은 ELF 참조가 없을 때만 삭제
 """
 import argparse
 import importlib.util
@@ -38,12 +38,6 @@ REMOVE_FILES = {
     "system/bin/nano",
     # "system/bin/toolbox",  # <--- [오탐 방지] 절대 삭제 금지 (getprop 등 필수 링크)
     "sbin/bash",
-    
-    # [V25 핵심 수정] ADB 및 Perfetto 관련 라이브러리 강제 삭제 (의존성 무시)
-    "system/lib/libadbconnection_server.so",
-    "system/lib/libadb_protos.so",
-    "system/lib/libadbd_auth.so",
-    "system/lib/libperfetto_c.so",
 }
 
 # 접두사 일치 삭제 (일반 파일만 대상). "res/"는 "twres/"와 겹치지 않는다.
@@ -60,6 +54,10 @@ OPTIONAL_LIB_NAMES = (
     "libicuuc.so",
     "libicudata.so",
     "libandroidicu.so",  # <--- [핵심] 얘를 지워야 ICU 연쇄 삭제됨
+    "libadbconnection_server.so",
+    "libadb_protos.so",
+    "libadbd_auth.so",
+    "libperfetto_c.so",
 )
 OPTIONAL_LIBS = {d + n for d in ("system/lib/", "system/lib64/") for n in OPTIONAL_LIB_NAMES}
 
@@ -128,8 +126,18 @@ def find_referenced_fonts(ents):
         try:
             root = ET.fromstring(e.data.decode("utf-8", "ignore"))
         except ET.ParseError:
-            print(f"WARNING: XML 파싱 실패({e.norm}) → 폰트는 삭제하지 않습니다.")
-            return None
+            print(f"WARNING: XML 파싱 실패({e.norm}) → 원문 정규식 스캔으로 대체")
+            text = e.data.decode("utf-8", "ignore")
+            fallback_refs = {
+                match.group(1).lower()
+                for match in re.finditer(
+                    r"([A-Za-z0-9_\-\.]+\.ttf)", text, re.IGNORECASE
+                )
+            }
+            if not fallback_refs:
+                return None
+            refs.update(fallback_refs)
+            continue
         for elem in root.iter():
             vals = list(elem.attrib.values()) + [elem.text or "", elem.tail or ""]
             for v in vals:
