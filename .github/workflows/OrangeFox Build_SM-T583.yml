@@ -343,6 +343,31 @@ jobs:
           file "$IMAGE"
           sha256sum "$IMAGE"
 
+      - name: Debug fox_protocol
+        if: always()
+        continue-on-error: true
+        working-directory: ${{ env.WS }}
+        run: |
+          set +e
+          {
+            echo '--- Android.bp and Cargo.toml references ---'
+            grep -rn "fox_protocol" --include=Android.bp --include=Cargo.toml external/ 2>/dev/null | head -30 || true
+            echo '--- protocol directories ---'
+            find . -path ./out -prune -o -type d -iname '*fox*protocol*' -print 2>/dev/null | head -30 || true
+            echo '--- manifest projects ---'
+            repo list 2>/dev/null | grep -i fox | head -50 || true
+            echo '--- tracked external/foxcli/Android.bp from synced HEAD ---'
+            git -C external/foxcli show HEAD:Android.bp 2>/dev/null || true
+            echo '--- external/foxcli/Android.bp working-tree diff ---'
+            git -C external/foxcli diff -- Android.bp 2>/dev/null || true
+            echo '--- external/foxcli/Android.bp ---'
+            if [ -f external/foxcli/Android.bp ]; then
+              cat external/foxcli/Android.bp
+            else
+              echo 'external/foxcli/Android.bp not found'
+            fi
+          } 2>&1 | tee "${GITHUB_WORKSPACE}/fox-protocol-debug.log"
+
       - name: Slim recovery image (strip + remove)
         id: slim_recovery
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
