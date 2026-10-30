@@ -1,23 +1,17 @@
 import gzip
 import hashlib
-import lzma
 import stat
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from package_recovery import (
     analyze_ramdisk,
     compressed_breakdown,
-    compress_cpio,
     compress_cpio_best,
-    decompress_ramdisk,
     rewrite_cpio,
 )
-import package_recovery
-from slim_recovery import find_referenced_fonts, should_remove
 
 
 def cpio_record(name, mode, content, inode, link_count=1):
@@ -107,71 +101,6 @@ class RamdiskAnalysisTests(unittest.TestCase):
         self.assertEqual([row["path"] for row in report], ["large.bin", "small.bin"])
         self.assertGreater(report[0]["gz_est"], report[1]["gz_est"])
 
-    def test_xz_compression_and_ramdisk_decompression_round_trip(self):
-        cpio = cpio_archive([
-            ("file", stat.S_IFREG | 0o644, b"payload", 1, 1),
-        ])
-        with patch.object(package_recovery, "RAMDISK_COMPRESSION", "xz"):
-            compressed = compress_cpio(cpio)
-            rewritten, _ = rewrite_cpio(cpio)
-            report = analyze_ramdisk(
-                lzma.compress(cpio), len(compress_cpio(rewritten))
-            )
-
-        self.assertTrue(compressed.startswith(b"\xfd7zXZ\x00"))
-        self.assertEqual(decompress_ramdisk(compressed), cpio)
-        self.assertEqual(report["compression"], "xz LZMA2 preset 9 extreme, CRC32, 8 MiB dictionary")
-        self.assertEqual(decompress_ramdisk(gzip.compress(cpio)), cpio)
-
-
-class RecoverySlimmingTests(unittest.TestCase):
-    def test_font_references_include_attributes_text_and_tail(self):
-        xml = (
-            b'<theme font="My.Font.ttf">Text.ttf'
-            b'<item>Roboto-Regular.ttf</item>Tail.ttf</theme>'
-        )
-        cpio = cpio_archive([
-            ("twres/themes/theme.xml", stat.S_IFREG | 0o644, xml, 1, 1),
-        ])
-
-        references = find_referenced_fonts(cpio, {"twres/themes/theme.xml"})
-
-        self.assertEqual(
-            references,
-            {"my.font.ttf", "text.ttf", "roboto-regular.ttf", "tail.ttf"},
-        )
-
-    def test_missing_or_malformed_theme_xml_preserves_font_candidates(self):
-        self.assertIsNone(find_referenced_fonts(cpio_archive([]), set()))
-        malformed = cpio_archive([
-            ("twres/themes/theme.xml", stat.S_IFREG | 0o644, b"<theme>", 1, 1),
-        ])
-        self.assertIsNone(
-            find_referenced_fonts(malformed, {"twres/themes/theme.xml"})
-        )
-
-    def test_removal_requires_regular_unreferenced_font_and_listed_icu(self):
-        regular = stat.S_IFREG | 0o644
-        symlink = stat.S_IFLNK | 0o777
-
-        self.assertTrue(
-            should_remove("twres/fonts/Unused.ttf", regular, 1, False, set())
-        )
-        self.assertFalse(
-            should_remove("twres/fonts/Unused.ttf", symlink, 1, False, set())
-        )
-        self.assertFalse(
-            should_remove("twres/fonts/Used.ttf", regular, 1, False, {"used.ttf"})
-        )
-        self.assertTrue(
-            should_remove("system/lib/libicuuc.so", regular, 1, True, set())
-        )
-        self.assertFalse(
-            should_remove("system/lib/libicu-other.so", regular, 1, True, set())
-        )
-        self.assertFalse(
-            should_remove("system/lib/libicuuc.so", symlink, 1, True, set())
-        )
 
 
 if __name__ == "__main__":

@@ -17,6 +17,20 @@ def make_entry(path, mode, data, inode):
 
 
 class RecoverySlimmingTests(unittest.TestCase):
+    def test_valid_theme_xml_collects_attribute_text_and_tail_font_references(self):
+        xml = (
+            b'<theme font="My.Font.ttf">Text.ttf'
+            b'<item>Roboto-Regular.ttf</item>Tail.ttf</theme>'
+        )
+        entry = make_entry(
+            "twres/themes/theme.xml", stat.S_IFREG | 0o644, xml, 1
+        )
+
+        self.assertEqual(
+            slim_recovery.find_referenced_fonts([entry]),
+            {"my.font.ttf", "text.ttf", "roboto-regular.ttf", "tail.ttf"},
+        )
+
     def test_malformed_theme_xml_fallback_preserves_literal_font_references(self):
         entry = make_entry(
             "twres/themes/theme.xml",
@@ -225,6 +239,57 @@ class RecoverySlimmingTests(unittest.TestCase):
             removed = slim_recovery.plan_removals([root, orphan, library], set())
 
         self.assertNotIn(library.norm, removed)
+
+    def test_orphan_icu_chain_is_removed_transitively(self):
+        root = make_entry(
+            "system/bin/recovery", stat.S_IFREG | 0o755, b"\x7fELFrecovery", 1
+        )
+        androidicu = make_entry(
+            "system/lib/libandroidicu.so", stat.S_IFREG | 0o644, b"\x7fELFandroidicu", 2
+        )
+        i18n = make_entry(
+            "system/lib/libicui18n.so", stat.S_IFREG | 0o644, b"\x7fELFi18n", 3
+        )
+        uc = make_entry(
+            "system/lib/libicuuc.so", stat.S_IFREG | 0o644, b"\x7fELFuc", 4
+        )
+
+        def needed(data):
+            if data == androidicu.data:
+                return ["libicui18n.so", "libicuuc.so"]
+            if data == i18n.data:
+                return ["libicuuc.so"]
+            return []
+
+        with patch.object(slim_recovery.rr, "elf_needed", side_effect=needed):
+            removed = slim_recovery.plan_removals([root, androidicu, i18n, uc], set())
+
+        for entry in (androidicu, i18n, uc):
+            self.assertEqual(removed.get(entry.norm), "unused-lib")
+
+    def test_icu_library_needed_by_live_executable_is_kept(self):
+        root = make_entry(
+            "system/bin/recovery", stat.S_IFREG | 0o755, b"\x7fELFrecovery", 1
+        )
+        androidicu = make_entry(
+            "system/lib/libandroidicu.so", stat.S_IFREG | 0o644, b"\x7fELFandroidicu", 2
+        )
+        uc = make_entry(
+            "system/lib/libicuuc.so", stat.S_IFREG | 0o644, b"\x7fELFuc", 3
+        )
+
+        def needed(data):
+            if data == root.data:
+                return ["libicuuc.so"]
+            if data == androidicu.data:
+                return ["libicuuc.so"]
+            return []
+
+        with patch.object(slim_recovery.rr, "elf_needed", side_effect=needed):
+            removed = slim_recovery.plan_removals([root, androidicu, uc], set())
+
+        self.assertEqual(removed.get(androidicu.norm), "unused-lib")
+        self.assertNotIn(uc.norm, removed)
 
     def test_optional_libraries_are_kept_when_elf_analysis_is_incomplete(self):
         malformed_elf = make_entry(

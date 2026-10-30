@@ -213,12 +213,14 @@ def plan_removals(ents, referenced_fonts):
     if bad:
         print(f"WARNING: ELF 파싱 실패 {len(bad)}개(예: {bad[0]}) → 선택적 라이브러리는 모두 유지합니다.")
     else:
-        direct_refs = defaultdict(list)
-        for path, dependencies in needs.items():
-            if path in removed:
-                continue
-            for name in dependencies or []:
-                direct_refs[name].append(path)
+        def live_direct_refs():
+            refs_by_name = defaultdict(list)
+            for path, dependencies in needs.items():
+                if path in removed:
+                    continue
+                for name in dependencies or []:
+                    refs_by_name[name].append(path)
+            return refs_by_name
 
         by_name = defaultdict(list)
         for path in elf_entries:
@@ -242,20 +244,26 @@ def plan_removals(ents, referenced_fonts):
                     reachable_refs[target].append(path)
                     pending.append(target)
 
-        for e in cands:
-            if e.norm in removed:
-                continue
-            name = os.path.basename(e.norm)
-            if name in ADB_OPTIONAL_LIB_NAMES:
-                refs = reachable_refs.get(e.norm, [])
-            else:
-                refs = direct_refs.get(name, [])
-            if refs:
-                kept_refs[e.norm] = refs
-                continue
-            if not hardlink_safe_to_drop(e, groups, removed):
-                continue
-            removed[e.norm] = "unused-lib"
+        # 삭제된 라이브러리의 참조는 무효이므로 변화가 없을 때까지 반복한다.
+        changed = True
+        while changed:
+            changed = False
+            direct_refs = live_direct_refs()
+            for e in cands:
+                if e.norm in removed:
+                    continue
+                name = os.path.basename(e.norm)
+                if name in ADB_OPTIONAL_LIB_NAMES:
+                    refs = reachable_refs.get(e.norm, [])
+                else:
+                    refs = direct_refs.get(name, [])
+                if refs:
+                    kept_refs[e.norm] = refs
+                    continue
+                if not hardlink_safe_to_drop(e, groups, removed):
+                    continue
+                removed[e.norm] = "unused-lib"
+                changed = True
 
     for e in cands:
         if e.norm not in removed:

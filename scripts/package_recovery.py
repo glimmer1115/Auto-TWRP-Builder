@@ -5,6 +5,7 @@ import json
 import stat
 import struct
 import sys
+import zlib
 from collections import defaultdict
 from pathlib import PurePosixPath
 from pathlib import Path
@@ -175,6 +176,17 @@ def compress_ramdisk(blob):
     # [수정] zopfli 압축 적용
     compressed = compress_cpio_best(rewritten)
     return compressed, len(rewritten), removed
+
+
+def compressed_breakdown(cpio):
+    """파일별 zlib 추정 압축 크기 내림차순 목록. 빌드 메타데이터와 비정규/빈 파일은 제외."""
+    rows = []
+    for _raw, norm, _hdr, _nb, data, mode, _nlink, size in iter_cpio_entries(cpio):
+        if norm == "TRAILER!!!" or not stat.S_ISREG(mode) or size == 0 or norm in BUILD_METADATA:
+            continue
+        rows.append({"path": norm, "size_bytes": size, "gz_est": len(zlib.compress(data, 6))})
+    rows.sort(key=lambda row: (-row["gz_est"], row["path"]))
+    return rows
 
 
 def analyze_ramdisk(blob, packaged_size, ramdisk_limit=RAMDISK_LIMIT, candidate_count=12):
