@@ -102,6 +102,7 @@ jobs:
           <manifest>
             <remove-project path="device/xiaomi/mondrian" />
             <remove-project path="device/xiaomi/sm84xx-common" />
+            <extend-project path="external/foxcli" revision="288f5579550ebd0d5e6325c1844a65bd3fb42d8c" />
           </manifest>
           EOF
           repo manifest -o /tmp/orangefox-manifest.xml
