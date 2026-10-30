@@ -63,6 +63,7 @@ OPTIONAL_LIB_NAMES = (
     "libicuuc.so",
     "libicudata.so",
     "libandroidicu.so",  # <--- [핵심] 얘를 지워야 ICU 연쇄 삭제됨
+    "libncurses.so",
     "libperfetto_c.so",
 )
 OPTIONAL_LIBS = {d + n for d in ("system/lib/", "system/lib64/") for n in OPTIONAL_LIB_NAMES}

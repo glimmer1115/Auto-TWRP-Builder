@@ -66,6 +66,23 @@ class RecoverySlimmingTests(unittest.TestCase):
 
         self.assertEqual(removed.get(library.norm), "unused-lib")
 
+    def test_optional_library_referenced_only_by_removed_nano_is_removed(self):
+        nano = make_entry(
+            "system/bin/nano", stat.S_IFREG | 0o755, b"\x7fELFnano", 1
+        )
+        library = make_entry(
+            "system/lib/libncurses.so", stat.S_IFREG | 0o644, b"\x7fELFncurses", 2
+        )
+
+        def needed(data):
+            return ["libncurses.so"] if data == nano.data else []
+
+        with patch.object(slim_recovery.rr, "elf_needed", side_effect=needed):
+            removed = slim_recovery.plan_removals([nano, library], set())
+
+        self.assertEqual(removed.get(nano.norm), "explicit")
+        self.assertEqual(removed.get(library.norm), "unused-lib")
+
     def test_referenced_optional_library_is_kept(self):
         consumer = make_entry(
             "system/bin/consumer", stat.S_IFREG | 0o755, b"\x7fELFconsumer", 1
