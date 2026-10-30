@@ -128,6 +128,37 @@ jobs:
           echo "repo sync 소요: $(( $(date +%s) - SYNC_START ))초, 프로젝트 수: $(repo list | wc -l)"
           { du -sm .repo; du -sm -- */ | sort -rn | awk 'NR<=15'; echo '--- prebuilts 하위 ---'; du -sm -- prebuilts/*/ | sort -rn | awk 'NR<=20'; } || true
           cp /tmp/orangefox-manifest.xml "${GITHUB_WORKSPACE}/orangefox-manifest.xml"
+
+          # Capture resolved source state before deleting repo Git metadata.
+          {
+            set +e
+            echo '--- resolved manifest ---'
+            repo manifest -r -o "${GITHUB_WORKSPACE}/orangefox-resolved-manifest.xml"
+            echo "repo_manifest_exit=$?"
+            if [ -f "${GITHUB_WORKSPACE}/orangefox-resolved-manifest.xml" ]; then
+              grep -n -i -E 'fox|protocol' "${GITHUB_WORKSPACE}/orangefox-resolved-manifest.xml"
+              echo "resolved_manifest_fox_search_exit=$?"
+            fi
+            echo '--- external/foxcli checkout ---'
+            if [ -d external/foxcli ]; then
+              git -C external/foxcli rev-parse HEAD
+              echo "foxcli_head_exit=$?"
+              git -C external/foxcli remote -v
+              echo "foxcli_remote_exit=$?"
+              git -C external/foxcli status --short
+              echo "foxcli_status_exit=$?"
+              echo '--- external/foxcli/Android.bp ---'
+              cat external/foxcli/Android.bp
+              echo "foxcli_android_bp_exit=$?"
+            else
+              echo 'external/foxcli checkout is missing'
+            fi
+            echo '--- Soong provider definitions ---'
+            find . -path ./out -prune -o -path ./.repo -prune -o -type f -name Android.bp -print0 |
+              xargs -0 -r grep -nH -E 'name[[:space:]]*:[[:space:]]*"libfox_protocol_types"|libfox_protocol_types'
+            echo "provider_search_exit=$?"
+          } 2>&1 | tee "${GITHUB_WORKSPACE}/fox-protocol-pre-cleanup.log"
+
           rm -rf .repo/projects .repo/project-objects cts prebuilts/abi-dumps
           df -h /
 
@@ -349,11 +380,7 @@ jobs:
             echo '--- protocol directories ---'
             find . -path ./out -prune -o -type d -iname '*fox*protocol*' -print 2>/dev/null | head -30 || true
             echo '--- manifest projects ---'
-            repo list 2>/dev/null | grep -i fox | head -50 || true
-            echo '--- tracked external/foxcli/Android.bp from synced HEAD ---'
-            git -C external/foxcli show HEAD:Android.bp 2>/dev/null || true
-            echo '--- external/foxcli/Android.bp working-tree diff ---'
-            git -C external/foxcli diff -- Android.bp 2>/dev/null || true
+            echo 'Repository metadata is captured before cleanup in fox-protocol-pre-cleanup.log'
             echo '--- external/foxcli/Android.bp ---'
             if [ -f external/foxcli/Android.bp ]; then
               cat external/foxcli/Android.bp
