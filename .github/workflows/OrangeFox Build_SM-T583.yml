@@ -417,6 +417,24 @@ jobs:
           python3 "${GITHUB_WORKSPACE}/scripts/reach_check.py" --image recovery.img \
             2>&1 | tee "${GITHUB_WORKSPACE}/reach-check.log"
 
+      - name: ELF dependency reachability
+        if: ${{ always() && steps.build.outcome == 'success' }}
+        continue-on-error: true
+        working-directory: ${{ env.WS }}/out/target/product/gtaxladwifikx
+        run: |
+          set -euo pipefail
+          python3 "${GITHUB_WORKSPACE}/scripts/ELFreach_check.py" --image recovery.img \
+            2>&1 | tee "${GITHUB_WORKSPACE}/elf-reach-check.log"
+
+      - name: Script-token reachability
+        if: ${{ always() && steps.build.outcome == 'success' }}
+        continue-on-error: true
+        working-directory: ${{ env.WS }}/out/target/product/gtaxladwifikx
+        run: |
+          set -euo pipefail
+          python3 "${GITHUB_WORKSPACE}/scripts/script-token_reach_check.py" --image recovery.img \
+            2>&1 | tee "${GITHUB_WORKSPACE}/script-token-reach-check.log"
+
       - name: Slim recovery image (strip + remove)
         id: slim_recovery
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}

@@ -53,6 +53,19 @@ class RecoverySlimmingTests(unittest.TestCase):
                 self.assertNotIn(path, slim_recovery.REMOVE_FILES)
                 self.assertIn(path, slim_recovery.OPTIONAL_LIBS)
 
+    def test_reachable_or_soft_only_adb_daemons_are_not_forced_removed(self):
+        for inode, path in enumerate(
+            ("system/bin/adbd", "system/bin/minadbd"), start=1
+        ):
+            daemon = make_entry(
+                path, stat.S_IFREG | 0o755, b"\x7fELF" + path.encode(), inode
+            )
+
+            with patch.object(slim_recovery.rr, "elf_needed", return_value=[]):
+                removed = slim_recovery.plan_removals([daemon], set())
+
+            self.assertNotIn(daemon.norm, removed)
+
     def test_unreferenced_optional_library_is_removed(self):
         consumer = make_entry(
             "system/bin/consumer", stat.S_IFREG | 0o755, b"\x7fELFconsumer", 1

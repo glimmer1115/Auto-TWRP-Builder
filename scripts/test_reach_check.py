@@ -52,7 +52,7 @@ class ReachCheckTests(unittest.TestCase):
             b"\x7fELFliborphan": [],
         }
 
-    def run_report(self, parser_result=None):
+    def run_report(self, parser_result=None, phase="combined"):
         output = io.StringIO()
         errors = io.StringIO()
         side_effect = parser_result or self.dependencies.get
@@ -63,7 +63,15 @@ class ReachCheckTests(unittest.TestCase):
             redirect_stderr(errors),
         ):
             result = reach_check.main(
-                ["--image", "fixture.img", "libfoo.so", "libsoft.so", "liborphan.so"]
+                [
+                    "--image",
+                    "fixture.img",
+                    "--phase",
+                    phase,
+                    "libfoo.so",
+                    "libsoft.so",
+                    "liborphan.so",
+                ]
             )
         return result, output.getvalue(), errors.getvalue()
 
@@ -76,6 +84,22 @@ class ReachCheckTests(unittest.TestCase):
         self.assertIn("판정: SOFT-ONLY", output)
         self.assertIn("판정: ORPHAN", output)
         self.assertIn("system/bin/minadbd[-]", output)
+
+    def test_elf_phase_reports_only_hard_dependency_paths(self):
+        result, output, _errors = self.run_report(phase="elf")
+
+        self.assertEqual(result, 0)
+        self.assertIn("분석 단계: ELF DT_NEEDED 하드 간선만", output)
+        self.assertIn("판정: HARD-REACHABLE", output)
+        self.assertIn("NO-HARD-PATH", output)
+        self.assertNotIn("SOFT-ONLY", output)
+
+    def test_script_token_phase_reports_path_and_token_references(self):
+        result, output, _errors = self.run_report(phase="script-token")
+
+        self.assertEqual(result, 0)
+        self.assertIn("PATH-REFERENCE: init.rc: system/bin/adbd => system/bin/adbd", output)
+        self.assertIn("SCRIPT-TOKEN: init.rc: adbd => system/bin/adbd", output)
 
     def test_stops_without_orphan_verdict_when_elf_parse_fails(self):
         result, output, errors = self.run_report(parser_result=lambda _data: None)

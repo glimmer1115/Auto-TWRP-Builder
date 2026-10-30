@@ -29,11 +29,8 @@ _spec = importlib.util.spec_from_file_location("package_recovery", _pr_path)
 pr = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(pr)
 
-# 무조건 삭제(정확 일치). minadbd를 먼저 지워야 adb 계열 라이브러리가 연쇄 삭제된다.
 REMOVE_FILES = {
     "system/bin/update_engine_sideload",
-    "system/bin/adbd",
-    "system/bin/minadbd",
     "system/bin/bash",
     "system/bin/nano",
     # "system/bin/toolbox",  # <--- [오탐 방지] 절대 삭제 금지 (getprop 등 필수 링크)

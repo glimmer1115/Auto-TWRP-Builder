@@ -106,6 +106,24 @@ def chain(parents, node, limit=8):
     return result + (" -> ..." if len(path) > limit else "")
 
 
+def script_token_references(elfs, texts, exes):
+    references = set()
+    for scanner in EXEC_SCANNERS:
+        if scanner not in elfs:
+            continue
+        for token in set(TOKEN_RE.findall(elfs[scanner])):
+            name = token.decode("ascii", "ignore")
+            for target in exes.get(name, ()):
+                references.add(("ELF-TOKEN", scanner, name, target))
+
+    for source, data in texts.items():
+        for token in set(TOKEN_RE.findall(data)):
+            name = token.decode("ascii", "ignore")
+            for target in exes.get(name, ()):
+                references.add(("SCRIPT-TOKEN", source, name, target))
+    return references
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=KoreanHelpFormatter, add_help=False
@@ -114,6 +132,12 @@ def main(argv=None):
     parser._optionals.title = "옵션"
     parser.add_argument("-h", "--help", action="help", help="도움말 표시")
     parser.add_argument("--image", required=True, type=Path, metavar="이미지", help="분석할 recovery 이미지")
+    parser.add_argument(
+        "--phase",
+        choices=("combined", "elf", "script-token"),
+        default="combined",
+        help="검증 단계 (기본값: combined)",
+    )
     parser.add_argument(
         "libs", nargs="*", metavar="라이브러리", help="출력할 ELF 파일 기본 이름"
     )
@@ -135,20 +159,21 @@ def main(argv=None):
         by_name[os.path.basename(path)].append(path)
 
     needed = {}
-    unparsed = []
-    for path, data in elfs.items():
-        dependencies = rr.elf_needed(data)
-        if dependencies is None:
-            unparsed.append(path)
-        else:
-            needed[path] = dependencies
-    if unparsed:
-        print(
-            f"분석 중단: ELF {len(unparsed)}개를 해석하지 못했습니다 "
-            f"(예: {unparsed[0]}). ORPHAN 판정을 출력하지 않습니다.",
-            file=sys.stderr,
-        )
-        return 2
+    if args.phase != "script-token":
+        unparsed = []
+        for path, data in elfs.items():
+            dependencies = rr.elf_needed(data)
+            if dependencies is None:
+                unparsed.append(path)
+            else:
+                needed[path] = dependencies
+        if unparsed:
+            print(
+                f"분석 중단: ELF {len(unparsed)}개를 해석하지 못했습니다 "
+                f"(예: {unparsed[0]}). ORPHAN 판정을 출력하지 않습니다.",
+                file=sys.stderr,
+            )
+            return 2
 
     exes = defaultdict(set)
     for path in elfs:
@@ -179,10 +204,25 @@ def main(argv=None):
         if stat.S_IFMT(mode) == stat.S_IFREG
         and (path.endswith((".rc", ".sh")) or path.startswith("FFiles/"))
     }
+    path_references = set()
     for path, data in texts.items():
         text = data.decode("utf-8", "ignore")
         for match in PATH_RE.finditer(text):
             add_root(match.group(1), f"{path}에서 참조")
+            for candidate in (match.group(1), match.group(1).replace("system/", "", 1)):
+                target = resolve_elf(candidate, files, elfs)
+                if target:
+                    path_references.add((path, match.group(1), target))
+
+    if args.phase == "script-token":
+        print("분석 단계: script/token 참조만")
+        for source, reference, target in sorted(path_references):
+            print(f"PATH-REFERENCE: {source}: {reference} => {target}")
+        references = script_token_references(elfs, texts, exes)
+        print(f"토큰 참조 {len(references)}개")
+        for kind, source, name, target in sorted(references):
+            print(f"{kind}: {source}: {name} => {target}")
+        return 0
 
     print(f"ELF {len(elfs)}개, 루트 {len(roots)}개")
     for root in sorted(roots):
@@ -196,6 +236,29 @@ def main(argv=None):
         }
         for path in elfs
     }
+    hard_parents = bfs(roots, hard)
+    if args.phase == "elf":
+        print("분석 단계: ELF DT_NEEDED 하드 간선만")
+        for name in args.libs or DEFAULT_TARGETS:
+            paths = by_name.get(name, ())
+            if not paths:
+                print(f"== {name}: 램디스크에 없음")
+                continue
+            for path in paths:
+                refs = sorted(source for source in elfs if path in hard[source])
+                rendered_refs = ", ".join(
+                    f"{source}[{'R' if source in hard_parents else '-'}]"
+                    for source in refs
+                ) or "없음"
+                print(f"== {path}")
+                print(f"   직접 NEEDED 참조: {rendered_refs}")
+                if path in hard_parents:
+                    print("   판정: HARD-REACHABLE")
+                else:
+                    print("   판정: NO-HARD-PATH (소프트 참조는 이 단계에서 검사하지 않음)")
+                print()
+        return 0
+
     soft = defaultdict(set)
     for path, data in elfs.items():
         for match in SO_RE.findall(data):
@@ -203,19 +266,12 @@ def main(argv=None):
             soft[path].update(target for target in by_name.get(name, ()) if target != path)
         soft[path].difference_update(hard[path])
 
-    for scanner in EXEC_SCANNERS:
-        if scanner not in elfs:
-            continue
-        for token in set(TOKEN_RE.findall(elfs[scanner])):
-            name = token.decode("ascii", "ignore")
-            soft[scanner].update(exes.get(name, ()))
+    for kind, source, _name, target in script_token_references(elfs, texts, exes):
+        if kind == "ELF-TOKEN":
+            soft[source].add(target)
+        else:
+            soft["__scripts__"].add(target)
 
-    for path, data in texts.items():
-        for token in set(TOKEN_RE.findall(data)):
-            name = token.decode("ascii", "ignore")
-            soft["__scripts__"].update(exes.get(name, ()))
-
-    hard_parents = bfs(roots, hard)
     all_edges = {path: hard[path] | soft.get(path, set()) for path in elfs}
     soft_roots = roots | soft["__scripts__"]
     all_parents = bfs(soft_roots, all_edges)
