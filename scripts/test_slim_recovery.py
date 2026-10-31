@@ -2,6 +2,7 @@ import stat
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -314,6 +315,33 @@ class RecoverySlimmingTests(unittest.TestCase):
         self.assertFalse(slim_recovery.should_strip("system/lib/libc.so", regular, 2, elf))
         self.assertFalse(slim_recovery.should_strip("system/lib/libc.so", stat.S_IFLNK | 0o777, 1, elf))
         self.assertFalse(slim_recovery.should_strip("system/etc/init.rc", regular, 1, b"on boot"))
+
+    def test_strip_command_removes_gnu_debugdata_and_keeps_smaller_valid_result(self):
+        calls = []
+
+        def fake_run(command, capture_output):
+            calls.append(command)
+            Path(command[-1]).write_bytes(b"\x7fELF-small")
+            return SimpleNamespace(returncode=0)
+
+        with patch.object(slim_recovery.subprocess, "run", side_effect=fake_run), \
+                patch.object(slim_recovery.rr, "elf_needed", return_value=[]):
+            stripped = slim_recovery.strip_elf_data(b"\x7fELF" + b"x" * 100, "fake-strip")
+
+        self.assertEqual(stripped, b"\x7fELF-small")
+        self.assertIn("--strip-unneeded", calls[0])
+        self.assertIn("--remove-section=.gnu_debugdata", calls[0])
+
+    def test_strip_failure_keeps_original(self):
+        original = b"\x7fELF" + b"x" * 100
+
+        with patch.object(slim_recovery.subprocess, "run", return_value=SimpleNamespace(returncode=1)), \
+                patch("builtins.print") as printed:
+            self.assertEqual(
+                slim_recovery.strip_elf_data(original, "fake-strip", "FFiles/ps"), original
+            )
+
+        self.assertIn("FFiles/ps", printed.call_args[0][0])
 
 
 if __name__ == "__main__":

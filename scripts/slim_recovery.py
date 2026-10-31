@@ -104,24 +104,28 @@ def find_safe_strip_tool():
             return tool
     return None
 
-def strip_elf_data(data, strip_tool):
+def strip_elf_data(data, strip_tool, label=""):
     if data[:4] != b"\x7fELF" or not strip_tool:
         return data
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
         tmp.write(data)
         tmp_path = tmp.name
     try:
-        res = subprocess.run([strip_tool, "--strip-unneeded", tmp_path], capture_output=True)
+        # .gnu_debugdata는 LZMA로 압축된 미니 디버그 심볼이라 gzip으로 줄지 않고 --strip-unneeded로도 남는다.
+        res = subprocess.run(
+            [strip_tool, "--strip-unneeded", "--remove-section=.gnu_debugdata", tmp_path],
+            capture_output=True,
+        )
         if res.returncode == 0:
             with open(tmp_path, "rb") as f:
                 new_data = f.read()
             if rr.elf_needed(new_data) is not None:
                 return new_data
-            print("WARNING: strip 후 ELF 구조 손상됨. 원본 유지.")
+            print(f"WARNING: strip 후 ELF 구조 손상됨 ({label}). 원본 유지.")
         else:
-            print(f"WARNING: strip 실패 (code {res.returncode}). 원본 유지.")
+            print(f"WARNING: strip 실패 (code {res.returncode}, {label}). 원본 유지.")
     except Exception as exc:
-        print(f"WARNING: strip 예외: {exc}. 원본 유지.")
+        print(f"WARNING: strip 예외 ({label}): {exc}. 원본 유지.")
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
@@ -348,7 +352,7 @@ def main():
             break
 
         if should_strip(e.norm, e.mode, e.nlink, entry_data):
-            new_data = strip_elf_data(entry_data, strip_tool)
+            new_data = strip_elf_data(entry_data, strip_tool, e.norm)
             if len(new_data) < len(entry_data):
                 stripped_count += 1
                 stripped_bytes += len(entry_data) - len(new_data)
