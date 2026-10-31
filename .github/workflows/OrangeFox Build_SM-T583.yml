@@ -496,6 +496,15 @@ jobs:
           set -euo pipefail
           python3 "${GITHUB_WORKSPACE}/scripts/ramdisk_top.py" --image recovery-slim.img 2>&1 | tee "${GITHUB_WORKSPACE}/ramdisk-top.log"
 
+      - name: Upload slim recovery image for ramdisk analysis
+        if: ${{ always() && steps.slim_recovery.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: orangefox-sm-t583-slim-image-do-not-flash
+          if-no-files-found: warn
+          retention-days: 7
+          path: ${{ env.WS }}/out/target/product/gtaxladwifikx/recovery-slim.img
+
       - name: Package OrangeFox recovery image
         id: package_image
         if: steps.slim_recovery.outcome == 'success'

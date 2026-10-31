@@ -304,6 +304,17 @@ class RecoverySlimmingTests(unittest.TestCase):
 
         self.assertNotIn(library.norm, removed)
 
+    def test_strip_applies_to_single_regular_elf_but_not_modules_or_shared_links(self):
+        elf = b"\x7fELF" + b"\0" * 12
+        regular = stat.S_IFREG | 0o755
+
+        self.assertTrue(slim_recovery.should_strip("system/lib/libc.so", regular, 1, elf))
+        self.assertTrue(slim_recovery.should_strip("system/bin/recovery", regular, 1, elf))
+        self.assertFalse(slim_recovery.should_strip("vendor/lib/modules/a.ko", regular, 1, elf))
+        self.assertFalse(slim_recovery.should_strip("system/lib/libc.so", regular, 2, elf))
+        self.assertFalse(slim_recovery.should_strip("system/lib/libc.so", stat.S_IFLNK | 0o777, 1, elf))
+        self.assertFalse(slim_recovery.should_strip("system/etc/init.rc", regular, 1, b"on boot"))
+
 
 if __name__ == "__main__":
     unittest.main()

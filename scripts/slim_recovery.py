@@ -72,6 +72,12 @@ STRIP_TARGETS = {
     "sbin/magiskboot",
 }
 
+def should_strip(norm, mode, nlink, data):
+    # 커널 모듈(.ko)은 심볼 제거 시 로딩 영향이 있어 제외한다.
+    if stat.S_IFMT(mode) != stat.S_IFREG or nlink != 1 or data[:4] != b"\x7fELF":
+        return False
+    return norm in STRIP_TARGETS or not norm.endswith(".ko")
+
 CRITICAL_LINK_NAMES = {
     "sh", "ash", "getprop", "setprop", "start", "stop", "init", "linker", "linker64",
     "recovery", "toybox", "busybox", "ls", "cat", "mount", "umount", "sleep", "grep",
@@ -322,6 +328,7 @@ def main():
     output = bytearray()
     by_reason = defaultdict(lambda: [0, 0])
     stripped_count = stripped_bytes = 0
+    strip_report = []
     raw_before = sum(e.size for e in ents)
 
     for e in ents:
@@ -340,11 +347,12 @@ def main():
             output.extend(b"\0" * (-len(output) % 4))
             break
 
-        if e.norm in STRIP_TARGETS and is_reg(e) and e.nlink == 1:
+        if should_strip(e.norm, e.mode, e.nlink, entry_data):
             new_data = strip_elf_data(entry_data, strip_tool)
             if len(new_data) < len(entry_data):
                 stripped_count += 1
                 stripped_bytes += len(entry_data) - len(new_data)
+                strip_report.append((len(entry_data) - len(new_data), e.norm))
                 header = bytearray(header)
                 header[54:62] = f"{len(new_data):08x}".encode("ascii")
                 entry_data = new_data
@@ -363,6 +371,8 @@ def main():
         n, b = by_reason.get(reason, (0, 0))
         print(f"  {reason:11} {n:4}개  {b:>12,} B")
     print(f"strip: {stripped_count}개 ELF, {stripped_bytes:,} B 절감")
+    for saved, path in sorted(strip_report, reverse=True)[:10]:
+        print(f"  strip 절감 {saved:>10,} B  {path}")
     print(f"cpio(비압축): {raw_before:,} → {len(output):,} bytes")
     print(f"램디스크(압축): {len(ramdisk):,} → {len(new_ramdisk):,} bytes")
     if args.limit:
