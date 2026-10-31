@@ -17,7 +17,65 @@ def make_entry(path, mode, data, inode):
     return slim_recovery.wrap((path, path, header, name_bytes, data, mode, 1, len(data)))
 
 
+def serialize_cpio(entries):
+    output = bytearray()
+    for entry in entries:
+        output.extend(entry.header)
+        output.extend(entry.name_bytes)
+        output.extend(b"\0" * (-len(output) % 4))
+        output.extend(entry.data)
+        output.extend(b"\0" * (-len(output) % 4))
+    output.extend(b"\0" * (-len(output) % slim_recovery.pr.CPIO_BLOCK_SIZE))
+    return bytes(output)
+
+
 class RecoverySlimmingTests(unittest.TestCase):
+    def test_override_scripts_are_serialized_as_executable(self):
+        for inode, path in enumerate(
+            ("sbin/usbwait.sh", "sbin/watchdogd.sh"), start=1
+        ):
+            entry = make_entry(path, stat.S_IFREG | 0o644, b"#!/sbin/sh", inode)
+
+            header = slim_recovery.required_mode_header(entry)
+
+            self.assertEqual(int(header[14:22], 16), stat.S_IFREG | 0o755)
+            self.assertEqual(entry.mode, stat.S_IFREG | 0o644)
+
+        unrelated = make_entry(
+            "sbin/other.sh", stat.S_IFREG | 0o644, b"#!/sbin/sh", 3
+        )
+        self.assertIs(slim_recovery.required_mode_header(unrelated), unrelated.header)
+
+    def test_override_script_mode_rejects_non_regular_entries(self):
+        entry = make_entry(
+            "sbin/usbwait.sh", stat.S_IFLNK | 0o777, b"target", 1
+        )
+
+        with self.assertRaisesRegex(ValueError, "must be a regular file"):
+            slim_recovery.required_mode_header(entry)
+
+    def test_override_script_mode_survives_package_cpio_rewrite(self):
+        entry = make_entry(
+            "sbin/usbwait.sh", stat.S_IFREG | 0o644, b"#!/sbin/sh", 1
+        )
+        executable = entry._replace(
+            header=slim_recovery.required_mode_header(entry),
+            mode=stat.S_IFREG | 0o755,
+        )
+        trailer = make_entry("TRAILER!!!", stat.S_IFREG, b"", 2)
+
+        rewritten, removed = slim_recovery.pr.rewrite_cpio(
+            serialize_cpio((executable, trailer))
+        )
+        result = next(
+            item
+            for item in slim_recovery.pr.iter_cpio_entries(rewritten)
+            if item[1] == "sbin/usbwait.sh"
+        )
+
+        self.assertEqual(removed, [])
+        self.assertEqual(result[5], stat.S_IFREG | 0o755)
+
     def test_valid_theme_xml_collects_attribute_text_and_tail_font_references(self):
         xml = (
             b'<theme font="My.Font.ttf">Text.ttf'

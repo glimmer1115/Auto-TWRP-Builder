@@ -66,6 +66,10 @@ OPTIONAL_LIB_NAMES = (
 OPTIONAL_LIBS = {d + n for d in ("system/lib/", "system/lib64/") for n in OPTIONAL_LIB_NAMES}
 
 KEEP_FONTS = {"roboto-regular.ttf", "roboto-medium.ttf"}
+EXECUTABLE_SCRIPT_MODES = {
+    "sbin/usbwait.sh": 0o755,
+    "sbin/watchdogd.sh": 0o755,
+}
 
 STRIP_TARGETS = {
     "system/bin/recovery", "system/bin/init", "system/bin/linker",
@@ -94,6 +98,17 @@ def wrap(t):
 
 def is_reg(e):
     return stat.S_IFMT(e.mode) == stat.S_IFREG
+
+def required_mode_header(e):
+    permissions = EXECUTABLE_SCRIPT_MODES.get(e.norm)
+    if permissions is None:
+        return e.header
+    if not is_reg(e):
+        raise ValueError(f"{e.norm} must be a regular file")
+    header = bytearray(e.header)
+    mode = stat.S_IFREG | permissions
+    header[14:22] = f"{mode:08x}".encode("ascii")
+    return header
 
 def is_twres_xml(path):
     return path.startswith("twres/") and path.endswith(".xml")
@@ -342,7 +357,11 @@ def main():
             r[1] += e.size
             continue
 
-        header, entry_data = e.header, e.data
+        try:
+            header = required_mode_header(e)
+        except ValueError as exc:
+            sys.exit(f"오류: {exc}")
+        entry_data = e.data
         if e.raw == "TRAILER!!!":
             output.extend(header)
             output.extend(e.name_bytes)
@@ -369,6 +388,22 @@ def main():
 
     output.extend(b"\0" * (-len(output) % pr.CPIO_BLOCK_SIZE))
     new_ramdisk = pr.compress_cpio(bytes(output))
+
+    final_entries = list(pr.iter_cpio_entries(rr.decompress_ramdisk(new_ramdisk)))
+    names = {t[1] for t in final_entries}
+    left = sorted(REMOVE_FILES & names)
+    if left:
+        sys.exit("오류: 삭제 대상이 슬림 이미지에 남아 있습니다: " + ", ".join(left))
+    print("검증 완료: 삭제 대상 파일이 모두 제거되었습니다.")
+
+    non_executable = sorted(
+        t[1]
+        for t in final_entries
+        if t[1] in EXECUTABLE_SCRIPT_MODES
+        and (stat.S_IFMT(t[5]) != stat.S_IFREG or not t[5] & 0o111)
+    )
+    if non_executable:
+        sys.exit("오류: override 스크립트가 실행 모드가 아닙니다: " + ", ".join(non_executable))
 
     print("--- 카테고리별 삭제 (비압축 기준) ---")
     for reason in ("explicit", "prefix", "font", "unused-lib"):
@@ -397,15 +432,6 @@ def main():
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_bytes(new_img)
     print(f"슬리밍 이미지 저장 완료: {args.output}")
-
-    # 조용한 실패 방지: 결과물에 삭제 대상이 남아있는지 최종 검증
-    names = {t[1] for t in pr.iter_cpio_entries(rr.decompress_ramdisk(new_ramdisk))}
-    left = sorted(REMOVE_FILES & names)
-    if left:
-        print(f"오류: 삭제 대상이 슬림 이미지에 남아 있습니다: {', '.join(left)}")
-        sys.exit(1)
-    else:
-        print("검증 완료: 삭제 대상 파일이 모두 제거되었습니다.")
 
     print("⚠️ 부트 헤더 SHA-1 미갱신. 직접 플래시 금지, 패키저 입력으로만 사용하세요.")
 
