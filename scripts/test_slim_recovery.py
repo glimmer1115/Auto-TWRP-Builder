@@ -1,3 +1,4 @@
+import struct
 import stat
 import sys
 import unittest
@@ -27,6 +28,34 @@ def serialize_cpio(entries):
         output.extend(b"\0" * (-len(output) % 4))
     output.extend(b"\0" * (-len(output) % slim_recovery.pr.CPIO_BLOCK_SIZE))
     return bytes(output)
+
+
+def make_elf32(interpreter=None):
+    interpreter_data = b"" if interpreter is None else interpreter.encode("ascii") + b"\0"
+    program_header_count = int(interpreter is not None)
+    data = bytearray(52 + (32 + len(interpreter_data) if interpreter is not None else 0))
+    data[:7] = b"\x7fELF\x01\x01\x01"
+    struct.pack_into("<H", data, 16, 2)
+    struct.pack_into("<H", data, 18, 40)
+    struct.pack_into("<I", data, 28, 52)
+    struct.pack_into("<HHH", data, 40, 52, 32, program_header_count)
+    if interpreter is not None:
+        path_offset = 84
+        struct.pack_into(
+            "<IIIIIIII",
+            data,
+            52,
+            3,
+            path_offset,
+            0,
+            0,
+            len(interpreter_data),
+            len(interpreter_data),
+            0,
+            1,
+        )
+        data[path_offset:path_offset + len(interpreter_data)] = interpreter_data
+    return bytes(data)
 
 
 class RecoverySlimmingTests(unittest.TestCase):
@@ -75,6 +104,105 @@ class RecoverySlimmingTests(unittest.TestCase):
 
         self.assertEqual(removed, [])
         self.assertEqual(result[5], stat.S_IFREG | 0o755)
+
+    def test_bootstrap_linker_alias_is_added_and_survives_package_rewrite(self):
+        entries = [
+            make_entry("system", stat.S_IFDIR | 0o755, b"", 1),
+            make_entry("system/bin", stat.S_IFDIR | 0o755, b"", 2),
+            make_entry(
+                "system/bin/linker",
+                stat.S_IFREG | 0o755,
+                make_elf32(),
+                3,
+            ),
+            make_entry(
+                "system/bin/hwservicemanager",
+                stat.S_IFREG | 0o755,
+                make_elf32("/system/bin/bootstrap/linker"),
+                4,
+            ),
+        ]
+
+        updated = slim_recovery.ensure_bootstrap_linker(entries)
+        by_path = {entry.norm: entry for entry in updated}
+        alias = by_path["system/bin/bootstrap/linker"]
+        trailer = make_entry("TRAILER!!!", stat.S_IFREG, b"", 5)
+        rewritten, removed = slim_recovery.pr.rewrite_cpio(
+            serialize_cpio((*updated, trailer))
+        )
+        packaged_alias = next(
+            entry
+            for entry in slim_recovery.pr.iter_cpio_entries(rewritten)
+            if entry[1] == "system/bin/bootstrap/linker"
+        )
+
+        self.assertEqual(len(updated), len(entries) + 2)
+        self.assertEqual(by_path["system/bin/bootstrap"].mode, stat.S_IFDIR | 0o755)
+        self.assertEqual(alias.mode, stat.S_IFLNK | 0o777)
+        self.assertEqual(alias.data, b"../linker")
+        self.assertEqual(
+            slim_recovery.rr.resolve_link(alias.norm, alias.data.decode()),
+            "system/bin/linker",
+        )
+        self.assertEqual(packaged_alias[5], stat.S_IFLNK | 0o777)
+        self.assertEqual(packaged_alias[4], b"../linker")
+        self.assertEqual(removed, [])
+        self.assertEqual(len(entries), 4)
+
+    def test_bootstrap_linker_alias_is_not_added_without_consumers(self):
+        entries = [
+            make_entry("system/bin", stat.S_IFDIR | 0o755, b"", 1),
+            make_entry(
+                "system/bin/linker", stat.S_IFREG | 0o755, make_elf32(), 2
+            ),
+        ]
+
+        updated = slim_recovery.ensure_bootstrap_linker(entries)
+
+        self.assertEqual([entry.norm for entry in updated], [entry.norm for entry in entries])
+
+    def test_bootstrap_linker_alias_requires_compatible_source(self):
+        entries = [
+            make_entry("system/bin", stat.S_IFDIR | 0o755, b"", 1),
+            make_entry(
+                "system/bin/hwservicemanager",
+                stat.S_IFREG | 0o755,
+                make_elf32("/system/bin/bootstrap/linker"),
+                2,
+            ),
+        ]
+
+        with self.assertRaisesRegex(ValueError, "system/bin/linker is missing"):
+            slim_recovery.ensure_bootstrap_linker(entries)
+
+    def test_bootstrap_linker_alias_rejects_non_executable_source(self):
+        entries = [
+            make_entry("system/bin", stat.S_IFDIR | 0o755, b"", 1),
+            make_entry(
+                "system/bin/linker", stat.S_IFREG | 0o644, make_elf32(), 2
+            ),
+            make_entry(
+                "system/bin/hwservicemanager",
+                stat.S_IFREG | 0o755,
+                make_elf32("/system/bin/bootstrap/linker"),
+                3,
+            ),
+        ]
+
+        with self.assertRaisesRegex(ValueError, "system/bin/linker is not executable"):
+            slim_recovery.ensure_bootstrap_linker(entries)
+
+    def test_elf_interpreter_path_ignores_trailing_null_padding(self):
+        data = bytearray(make_elf32("/sbin/linker64"))
+        padding = b"\0" * 6
+        data.extend(padding)
+        interpreter_size = len("/sbin/linker64") + 1 + len(padding)
+        struct.pack_into("<I", data, 68, interpreter_size)
+        struct.pack_into("<I", data, 72, interpreter_size)
+
+        self.assertEqual(
+            slim_recovery.elf_interpreter_path(bytes(data)), "/sbin/linker64"
+        )
 
     def test_valid_theme_xml_collects_attribute_text_and_tail_font_references(self):
         xml = (

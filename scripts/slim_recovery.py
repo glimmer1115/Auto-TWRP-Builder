@@ -70,6 +70,9 @@ EXECUTABLE_SCRIPT_MODES = {
     "sbin/usbwait.sh": 0o755,
     "sbin/watchdogd.sh": 0o755,
 }
+BOOTSTRAP_LINKER_PATH = "system/bin/bootstrap/linker"
+BOOTSTRAP_LINKER_SOURCE = "system/bin/linker"
+BOOTSTRAP_LINKER_TARGET = "../linker"
 
 STRIP_TARGETS = {
     "system/bin/recovery", "system/bin/init", "system/bin/linker",
@@ -109,6 +112,136 @@ def required_mode_header(e):
     mode = stat.S_IFREG | permissions
     header[14:22] = f"{mode:08x}".encode("ascii")
     return header
+
+def elf_interpreter_path(data):
+    if data[:4] != b"\x7fELF":
+        return None
+    if len(data) < 52 or data[5] != 1:
+        raise ValueError("unsupported or truncated ELF header")
+
+    if data[4] == 1:
+        phoff = struct.unpack_from("<I", data, 0x1C)[0]
+        phentsize, phnum = struct.unpack_from("<HH", data, 0x2A)
+        ph_format, offset_index, size_index = "<IIIIIIII", 1, 4
+    elif data[4] == 2:
+        if len(data) < 64:
+            raise ValueError("truncated ELF64 header")
+        phoff = struct.unpack_from("<Q", data, 0x20)[0]
+        phentsize, phnum = struct.unpack_from("<HH", data, 0x36)
+        ph_format, offset_index, size_index = "<IIQQQQQQ", 2, 5
+    else:
+        raise ValueError("unsupported ELF class")
+
+    if phnum == 0:
+        return None
+    minimum_size = struct.calcsize(ph_format)
+    if phentsize < minimum_size:
+        raise ValueError("invalid ELF program-header size")
+    for index in range(phnum):
+        base = phoff + index * phentsize
+        if base + phentsize > len(data):
+            raise ValueError("truncated ELF program header")
+        fields = struct.unpack_from(ph_format, data, base)
+        if fields[0] != 3:
+            continue
+        start = fields[offset_index]
+        size = fields[size_index]
+        if size < 2 or start + size > len(data):
+            raise ValueError("invalid PT_INTERP segment")
+        raw_path = data[start:start + size]
+        terminator = raw_path.find(b"\0")
+        if terminator < 1 or any(raw_path[terminator:]):
+            raise ValueError("invalid PT_INTERP terminator")
+        try:
+            return raw_path[:terminator].decode("ascii")
+        except UnicodeDecodeError as exc:
+            raise ValueError("non-ASCII PT_INTERP path") from exc
+    return None
+
+def make_cpio_entry(path, mode, data, inode, link_count=1):
+    name_bytes = path.encode("utf-8") + b"\0"
+    fields = (
+        inode, mode, 0, 0, link_count, 0, len(data), 0, 0, 0, 0,
+        len(name_bytes), 0,
+    )
+    header = b"070701" + b"".join(
+        f"{value:08x}".encode("ascii") for value in fields
+    )
+    return wrap((path, path, header, name_bytes, data, mode, link_count, len(data)))
+
+def ensure_bootstrap_linker(entries):
+    consumers = []
+    for entry in entries:
+        if not is_reg(entry) or entry.data[:4] != b"\x7fELF":
+            continue
+        try:
+            interpreter = elf_interpreter_path(entry.data)
+        except ValueError as exc:
+            raise ValueError(f"{entry.norm}: {exc}") from exc
+        if interpreter == "/" + BOOTSTRAP_LINKER_PATH:
+            consumers.append(entry)
+    if not consumers:
+        return list(entries)
+
+    by_path = {entry.norm: entry for entry in entries}
+    source = by_path.get(BOOTSTRAP_LINKER_SOURCE)
+    if source is None or not is_reg(source) or source.data[:4] != b"\x7fELF":
+        raise ValueError("bootstrap linker is required but system/bin/linker is missing")
+    if len(source.data) < 52 or source.data[4] != 1 or source.data[5] != 1:
+        raise ValueError("system/bin/linker is not a little-endian ELF32 linker")
+    if not source.mode & 0o111:
+        raise ValueError("system/bin/linker is not executable")
+    source_abi = (source.data[4], source.data[5], int.from_bytes(source.data[18:20], "little"))
+    if source_abi[2] != 40 or elf_interpreter_path(source.data) is not None:
+        raise ValueError("system/bin/linker is not a static ARM32 linker")
+    for consumer in consumers:
+        data = consumer.data
+        if len(data) < 20:
+            raise ValueError(f"{consumer.norm}: truncated ELF identity")
+        consumer_abi = (data[4], data[5], int.from_bytes(data[18:20], "little"))
+        if consumer_abi != source_abi:
+            raise ValueError(f"{consumer.norm}: linker ABI does not match")
+
+    existing = by_path.get(BOOTSTRAP_LINKER_PATH)
+    if existing is not None:
+        if stat.S_IFMT(existing.mode) == stat.S_IFLNK:
+            target = existing.data.decode("utf-8", "replace")
+            if rr.resolve_link(existing.norm, target) == BOOTSTRAP_LINKER_SOURCE:
+                return list(entries)
+        elif is_reg(existing) and existing.data[:4] == b"\x7fELF":
+            if (
+                (existing.data[4], existing.data[5], int.from_bytes(existing.data[18:20], "little")) == source_abi
+                and elf_interpreter_path(existing.data) is None
+            ):
+                return list(entries)
+        raise ValueError("existing bootstrap linker is not compatible with system/bin/linker")
+
+    system_bin = by_path.get("system/bin")
+    if system_bin is None or stat.S_IFMT(system_bin.mode) != stat.S_IFDIR:
+        raise ValueError("system/bin directory is missing")
+    bootstrap_dir = by_path.get("system/bin/bootstrap")
+    if bootstrap_dir is not None and stat.S_IFMT(bootstrap_dir.mode) != stat.S_IFDIR:
+        raise ValueError("system/bin/bootstrap exists but is not a directory")
+
+    next_inode = max((int(entry.header[6:14], 16) for entry in entries), default=0) + 1
+    additions = []
+    if bootstrap_dir is None:
+        additions.append(make_cpio_entry(
+            "system/bin/bootstrap", stat.S_IFDIR | 0o755, b"", next_inode, 2
+        ))
+        next_inode += 1
+    additions.append(make_cpio_entry(
+        BOOTSTRAP_LINKER_PATH, stat.S_IFLNK | 0o777,
+        BOOTSTRAP_LINKER_TARGET.encode("ascii"), next_inode,
+    ))
+
+    result = list(entries)
+    parent = bootstrap_dir or system_bin
+    insert_at = result.index(parent) + 1
+    result[insert_at:insert_at] = additions
+    if rr.resolve_link(BOOTSTRAP_LINKER_PATH, BOOTSTRAP_LINKER_TARGET) != BOOTSTRAP_LINKER_SOURCE:
+        raise ValueError("bootstrap linker symlink target is invalid")
+    return result
 
 def is_twres_xml(path):
     return path.startswith("twres/") and path.endswith(".xml")
@@ -336,6 +469,14 @@ def main():
     for e in ents:
         if e.header[:6] != b"070701":
             sys.exit(f"Error: Unsupported CPIO magic {e.header[:6]}. Only 070701 is safe.")
+
+    try:
+        original_count = len(ents)
+        ents = ensure_bootstrap_linker(ents)
+    except ValueError as exc:
+        sys.exit(f"오류: {exc}")
+    if len(ents) > original_count:
+        print("보정: system/bin/bootstrap/linker -> ../linker (matching ARM32 ELF interpreter)")
 
     referenced_fonts = find_referenced_fonts(ents)
     removed = plan_removals(ents, referenced_fonts)
