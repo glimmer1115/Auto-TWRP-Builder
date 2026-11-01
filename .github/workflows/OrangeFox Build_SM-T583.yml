@@ -337,6 +337,25 @@ jobs:
           cp "${GITHUB_WORKSPACE}/overrides/usbwait.sh" recovery/root/sbin/
           chmod 755 recovery/root/sbin/watchdogd.sh recovery/root/sbin/usbwait.sh
 
+          python3 - <<'PY'
+          from pathlib import Path
+
+          device_init = Path("recovery/root/init.recovery.samsungexynos7870.rc")
+          duplicate_mount = b"    mount functionfs adb /dev/usb-ffs/adb uid=2000,gid=2000,rmode=0777,fmode=0666"
+
+          lines = device_init.read_bytes().splitlines(keepends=True)
+          matches = [line for line in lines if line.rstrip(b"\r\n") == duplicate_mount]
+          if len(matches) != 1:
+              raise SystemExit(f"expected one duplicate FunctionFS mount, found {len(matches)}")
+
+          device_init.write_bytes(b"".join(
+              line for line in lines if line.rstrip(b"\r\n") != duplicate_mount
+          ))
+          if duplicate_mount in [line.rstrip(b"\r\n") for line in device_init.read_bytes().splitlines()]:
+              raise SystemExit("duplicate FunctionFS mount remains in device init rc")
+          print("SM-T583: retained AOSP FunctionFS mount; removed duplicate device mount")
+          PY
+
       - name: Restore ccache
         uses: actions/cache/restore@v5
         with:
