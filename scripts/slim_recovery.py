@@ -73,6 +73,11 @@ EXECUTABLE_SCRIPT_MODES = {
 BOOTSTRAP_LINKER_PATH = "system/bin/bootstrap/linker"
 BOOTSTRAP_LINKER_SOURCE = "system/bin/linker"
 BOOTSTRAP_LINKER_TARGET = "../linker"
+BOOTSTRAP_LINKER_INIT = "system/etc/init/hw/init.rc"
+BOOTSTRAP_LINKER_INIT_COMMAND = re.compile(
+    rb"^[ \t]*symlink[ \t]+/system/bin/linker[ \t]+/system/bin/bootstrap/linker[ \t]*\r?$",
+    re.MULTILINE,
+)
 
 STRIP_TARGETS = {
     "system/bin/recovery", "system/bin/init", "system/bin/linker",
@@ -202,11 +207,20 @@ def ensure_bootstrap_linker(entries):
         if consumer_abi != source_abi:
             raise ValueError(f"{consumer.norm}: linker ABI does not match")
 
+    init_config = by_path.get(BOOTSTRAP_LINKER_INIT)
+    init_creates_linker = bool(
+        init_config and BOOTSTRAP_LINKER_INIT_COMMAND.search(init_config.data)
+    )
     existing = by_path.get(BOOTSTRAP_LINKER_PATH)
     if existing is not None:
         if stat.S_IFMT(existing.mode) == stat.S_IFLNK:
             target = existing.data.decode("utf-8", "replace")
-            if rr.resolve_link(existing.norm, target) == BOOTSTRAP_LINKER_SOURCE:
+            if rr.resolve_link(existing.norm, target) != BOOTSTRAP_LINKER_SOURCE:
+                raise ValueError("existing bootstrap linker is not compatible with system/bin/linker")
+            if init_creates_linker:
+                entries = [entry for entry in entries if entry.norm != BOOTSTRAP_LINKER_PATH]
+                by_path.pop(BOOTSTRAP_LINKER_PATH)
+            else:
                 return list(entries)
         elif is_reg(existing) and existing.data[:4] == b"\x7fELF":
             if (
@@ -214,7 +228,9 @@ def ensure_bootstrap_linker(entries):
                 and elf_interpreter_path(existing.data) is None
             ):
                 return list(entries)
-        raise ValueError("existing bootstrap linker is not compatible with system/bin/linker")
+            raise ValueError("existing bootstrap linker is not compatible with system/bin/linker")
+        else:
+            raise ValueError("existing bootstrap linker is not compatible with system/bin/linker")
 
     system_bin = by_path.get("system/bin")
     if system_bin is None or stat.S_IFMT(system_bin.mode) != stat.S_IFDIR:
@@ -230,16 +246,22 @@ def ensure_bootstrap_linker(entries):
             "system/bin/bootstrap", stat.S_IFDIR | 0o755, b"", next_inode, 2
         ))
         next_inode += 1
-    additions.append(make_cpio_entry(
-        BOOTSTRAP_LINKER_PATH, stat.S_IFLNK | 0o777,
-        BOOTSTRAP_LINKER_TARGET.encode("ascii"), next_inode,
-    ))
+    if not init_creates_linker:
+        additions.append(make_cpio_entry(
+            BOOTSTRAP_LINKER_PATH, stat.S_IFLNK | 0o777,
+            BOOTSTRAP_LINKER_TARGET.encode("ascii"), next_inode,
+        ))
 
     result = list(entries)
+    if not additions:
+        return result
     parent = bootstrap_dir or system_bin
     insert_at = result.index(parent) + 1
     result[insert_at:insert_at] = additions
-    if rr.resolve_link(BOOTSTRAP_LINKER_PATH, BOOTSTRAP_LINKER_TARGET) != BOOTSTRAP_LINKER_SOURCE:
+    if (
+        not init_creates_linker
+        and rr.resolve_link(BOOTSTRAP_LINKER_PATH, BOOTSTRAP_LINKER_TARGET) != BOOTSTRAP_LINKER_SOURCE
+    ):
         raise ValueError("bootstrap linker symlink target is invalid")
     return result
 
@@ -471,12 +493,12 @@ def main():
             sys.exit(f"Error: Unsupported CPIO magic {e.header[:6]}. Only 070701 is safe.")
 
     try:
-        original_count = len(ents)
+        original_entries = ents
         ents = ensure_bootstrap_linker(ents)
     except ValueError as exc:
         sys.exit(f"오류: {exc}")
-    if len(ents) > original_count:
-        print("보정: system/bin/bootstrap/linker -> ../linker (matching ARM32 ELF interpreter)")
+    if ents != original_entries:
+        print("보정: bootstrap directory 준비; init symlink command가 linker를 생성합니다")
 
     referenced_fonts = find_referenced_fonts(ents)
     removed = plan_removals(ents, referenced_fonts)

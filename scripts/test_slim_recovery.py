@@ -149,6 +149,80 @@ class RecoverySlimmingTests(unittest.TestCase):
         self.assertEqual(removed, [])
         self.assertEqual(len(entries), 4)
 
+    def test_init_creates_bootstrap_linker_after_directory_is_prepared(self):
+        init_config = (
+            b"on early-init\r\n"
+            b"    symlink /system/bin/linker /system/bin/bootstrap/linker\r\n"
+        )
+        entries = [
+            make_entry("system", stat.S_IFDIR | 0o755, b"", 1),
+            make_entry("system/bin", stat.S_IFDIR | 0o755, b"", 2),
+            make_entry(
+                "system/bin/linker", stat.S_IFREG | 0o755, make_elf32(), 3
+            ),
+            make_entry(
+                "system/bin/hwservicemanager",
+                stat.S_IFREG | 0o755,
+                make_elf32("/system/bin/bootstrap/linker"),
+                4,
+            ),
+            make_entry(
+                "system/etc/init/hw/init.rc",
+                stat.S_IFREG | 0o644,
+                init_config,
+                5,
+            ),
+        ]
+
+        updated = slim_recovery.ensure_bootstrap_linker(entries)
+        paths = {entry.norm: entry for entry in updated}
+
+        self.assertEqual(len(updated), len(entries) + 1)
+        self.assertEqual(paths["system/bin/bootstrap"].mode, stat.S_IFDIR | 0o755)
+        self.assertNotIn("system/bin/bootstrap/linker", paths)
+
+    def test_preexisting_bootstrap_linker_is_removed_when_init_owns_creation(self):
+        init_config = (
+            b"on early-init\n"
+            b"    symlink /system/bin/linker /system/bin/bootstrap/linker\n"
+        )
+        entries = [
+            make_entry("system", stat.S_IFDIR | 0o755, b"", 1),
+            make_entry("system/bin", stat.S_IFDIR | 0o755, b"", 2),
+            make_entry(
+                "system/bin/linker", stat.S_IFREG | 0o755, make_elf32(), 3
+            ),
+            make_entry(
+                "system/bin/bootstrap", stat.S_IFDIR | 0o755, b"", 4
+            ),
+            make_entry(
+                "system/bin/bootstrap/linker",
+                stat.S_IFLNK | 0o777,
+                b"../linker",
+                5,
+            ),
+            make_entry(
+                "system/bin/hwservicemanager",
+                stat.S_IFREG | 0o755,
+                make_elf32("/system/bin/bootstrap/linker"),
+                6,
+            ),
+            make_entry(
+                "system/etc/init/hw/init.rc",
+                stat.S_IFREG | 0o644,
+                init_config,
+                7,
+            ),
+        ]
+
+        updated = slim_recovery.ensure_bootstrap_linker(entries)
+
+        self.assertEqual(len(updated), len(entries) - 1)
+        self.assertIn("system/bin/bootstrap", {entry.norm for entry in updated})
+        self.assertNotIn(
+            "system/bin/bootstrap/linker", {entry.norm for entry in updated}
+        )
+
     def test_bootstrap_linker_alias_is_not_added_without_consumers(self):
         entries = [
             make_entry("system/bin", stat.S_IFDIR | 0o755, b"", 1),

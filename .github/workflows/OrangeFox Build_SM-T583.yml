@@ -498,7 +498,7 @@ jobs:
 
       - name: Upload slim recovery image for ramdisk analysis
         if: ${{ always() && steps.slim_recovery.outcome == 'success' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: orangefox-sm-t583-slim-image-do-not-flash
           if-no-files-found: warn
@@ -602,7 +602,7 @@ jobs:
 
       - name: Upload build diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: orangefox-sm-t583-diagnostics
           if-no-files-found: warn
@@ -619,7 +619,7 @@ jobs:
 
       - name: Upload logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: build-logs
           path: |
