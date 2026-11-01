@@ -149,7 +149,7 @@ class RecoverySlimmingTests(unittest.TestCase):
         self.assertEqual(removed, [])
         self.assertEqual(len(entries), 4)
 
-    def test_init_creates_bootstrap_linker_after_directory_is_prepared(self):
+    def test_init_command_keeps_bootstrap_alias_preseeded_for_early_boot(self):
         init_config = (
             b"on early-init\r\n"
             b"    symlink /system/bin/linker /system/bin/bootstrap/linker\r\n"
@@ -177,11 +177,11 @@ class RecoverySlimmingTests(unittest.TestCase):
         updated = slim_recovery.ensure_bootstrap_linker(entries)
         paths = {entry.norm: entry for entry in updated}
 
-        self.assertEqual(len(updated), len(entries) + 1)
+        self.assertEqual(len(updated), len(entries) + 2)
         self.assertEqual(paths["system/bin/bootstrap"].mode, stat.S_IFDIR | 0o755)
-        self.assertNotIn("system/bin/bootstrap/linker", paths)
+        self.assertEqual(paths["system/bin/bootstrap/linker"].data, b"../linker")
 
-    def test_preexisting_bootstrap_linker_is_removed_when_init_owns_creation(self):
+    def test_preexisting_bootstrap_linker_is_kept_when_init_recreation_fails(self):
         init_config = (
             b"on early-init\n"
             b"    symlink /system/bin/linker /system/bin/bootstrap/linker\n"
@@ -216,12 +216,11 @@ class RecoverySlimmingTests(unittest.TestCase):
         ]
 
         updated = slim_recovery.ensure_bootstrap_linker(entries)
+        paths = {entry.norm: entry for entry in updated}
 
-        self.assertEqual(len(updated), len(entries) - 1)
-        self.assertIn("system/bin/bootstrap", {entry.norm for entry in updated})
-        self.assertNotIn(
-            "system/bin/bootstrap/linker", {entry.norm for entry in updated}
-        )
+        self.assertEqual(len(updated), len(entries))
+        self.assertIn("system/bin/bootstrap", paths)
+        self.assertEqual(paths["system/bin/bootstrap/linker"].data, b"../linker")
 
     def test_bootstrap_linker_alias_is_not_added_without_consumers(self):
         entries = [
