@@ -567,9 +567,273 @@ jobs:
               )
           PY
 
+      # ─────────────────────────────────────────────────────────
+      # 1단 gate (CI 강제). final recovery.img ramdisk 를 직접 풀어 검사.
+      #  정책:
+      #   - 미지원 압축 → unverified 기록 + fail(차단)
+      #   - CPIO 이름/trailer/중복/패딩 구조 불량 → fail(차단)
+      #   - 구조 OK + 필수 조건 불일치 → fail(차단)
+      #  검사 대상은 "정확한 경로/타입"에 결박한다(전체 blob 검색 금지).
+      #  EXPECTED_BOOTSTRAP_LINKER_TARGET 을 지정하면 symlink target 도 강제.
+      # ─────────────────────────────────────────────────────────
+      - name: Verify final ramdisk (1단 gate)
+        id: ramdisk_gate
+        if: steps.ramdisk_limit.outcome == 'success'
+        env:
+          EXPECTED_BOOTSTRAP_LINKER_TARGET: "../linker"
+        working-directory: ${{ env.WS }}/out/target/product/gtaxladwifikx
+        run: |
+            set -euo pipefail
+            python3 - <<'PY' 2>&1 | tee "${GITHUB_WORKSPACE}/final-ramdisk-gate.log"
+            import gzip, json, lzma, os, posixpath, struct, subprocess
+            from pathlib import Path
+
+            IMAGE = Path("recovery.img")
+            DEVICE_RC = "init.recovery.samsungexynos7870.rc"
+            ADB_MOUNT_PREFIX = (b"mount", b"functionfs", b"adb", b"/dev/usb-ffs/adb")
+            AOSP_INIT_RC = ("system/etc/init/hw/init.rc", "init.rc")
+            DEVICE_RC_IMPORT = b"import /init.recovery.${ro.hardware}.rc"
+            WATCHDOG_SERVICE = (b"service", b"watchdogd", b"/sbin/watchdogd.sh")
+            S_IFMT, S_IFLNK, S_IFREG = 0o170000, 0o120000, 0o100000
+
+            result = {
+              "status": "unverified",
+                "policy": "unsupported-compression=unverified+nonzero; malformed-cpio=fail; duplicate-path=fail; check-mismatch=fail",
+              "checks": {}, "entries": 0, "errors": [], "format": None,
+            }
+            out_path = Path("final-ramdisk-gate.json")
+
+            def emit(status, rc):
+              result["status"] = status
+              out_path.write_text(json.dumps(result, indent=2))
+              print(json.dumps(result, indent=2))
+              return rc
+
+            def decompress(blob):
+              if blob[:2] == b"\x1f\x8b":
+                return gzip.decompress(blob), "gzip"
+              if blob[:6] == b"\xfd7zXZ\x00":
+                return lzma.decompress(blob), "xz"
+              if blob[:4] == b"\x04\x22\x4d\x18":
+                return subprocess.run(["lz4", "-d", "-c"], input=blob,
+                          capture_output=True, check=True).stdout, "lz4"
+              if blob[:4] == b"\x02\x21\x4c\x18":
+                return subprocess.run(["lz4", "-d", "-c", "-l"], input=blob,
+                          capture_output=True, check=True).stdout, "lz4-legacy"
+              if blob[:2] == b"\x1f\x9e":
+                return subprocess.run(["lzop", "-d", "-c"], input=blob,
+                          capture_output=True, check=True).stdout, "lzop"
+              if blob[:6] in (b"070701", b"070702"):
+                return blob, "cpio-raw"
+              raise RuntimeError(f"unsupported ramdisk compression magic {blob[:6]!r}")
+
+            def parse_cpio(buf):
+                out, dup, off, count, consumed = {}, [], 0, 0, 0
+                n = len(buf)
+                while True:
+                    if off + 110 > n:
+                        raise ValueError(f"cpio header missing/truncated at offset {off}")
+                    magic = buf[off:off + 6]
+                    if magic not in (b"070701", b"070702"):
+                        raise ValueError(f"bad cpio magic at offset {off}: {magic!r}")
+                    try:
+                        f = [int(buf[off + 6 + i * 8: off + 6 + i * 8 + 8], 16) for i in range(13)]
+                    except ValueError as exc:
+                        raise ValueError(f"non-hex cpio field at offset {off}") from exc
+                    namesize, filesize, mode = f[11], f[6], f[1]
+                    name_off = off + 110
+                    if namesize < 2:
+                        raise ValueError(f"invalid namesize={namesize} at offset {off}")
+                    if name_off + namesize > n:
+                        raise ValueError(f"namesize={namesize} exceeds buffer at offset {off}")
+                    raw_name = buf[name_off:name_off + namesize]
+                    if raw_name[-1] != 0:
+                        raise ValueError(
+                            f"filename not NUL-terminated at offset {off}: {raw_name[-12:]!r}"
+                        )
+                    if 0 in raw_name[:-1]:
+                        raise ValueError(f"embedded NUL in filename at offset {off}: {raw_name!r}")
+                    name = raw_name[:-1].decode("utf-8", "replace")
+                    data_off = name_off + namesize
+                    data_off += (-data_off) % 4
+                    if data_off + filesize > n:
+                        raise ValueError(f"truncated data for {name!r} (size={filesize}) at offset {off}")
+                    data = buf[data_off:data_off + filesize]
+                    off = data_off + filesize
+                    off += (-off) % 4
+                    count += 1
+                    if name == "TRAILER!!!":
+                        if namesize != 11:
+                            raise ValueError(f"trailer namesize={namesize} (expected 11)")
+                        if filesize != 0:
+                            raise ValueError(f"trailer filesize={filesize} (expected 0)")
+                        consumed = off
+                        break
+                    if name in out:
+                        dup.append(name)
+                    out[name] = (mode, data)
+                rest = buf[consumed:]
+                if rest.strip(b"\x00"):
+                    bad = next(i for i, byte in enumerate(rest) if byte)
+                    raise ValueError(
+                        f"non-zero padding after trailer at trailing offset {bad}: {rest[bad:bad + 16]!r}"
+                    )
+                if dup:
+                    raise ValueError(f"duplicate cpio paths: {sorted(set(dup))}")
+                return out, count, consumed, len(rest)
+
+            raw = IMAGE.read_bytes()
+            if len(raw) < 44 or raw[:8] != b"ANDROID!":
+              result["errors"].append("invalid final recovery.img header")
+              raise SystemExit(emit("fail", 1))
+            kernel_size, _, ramdisk_size, _, _, _, _, page_size, _ = struct.unpack_from("<9I", raw, 8)
+            ramdisk_off = page_size + ((kernel_size + page_size - 1) // page_size) * page_size
+            blob = raw[ramdisk_off:ramdisk_off + ramdisk_size]
+
+            try:
+              plain, fmt = decompress(blob)
+            except Exception as exc:  # noqa: BLE001
+              result["errors"].append(f"decompress failed: {exc}")
+              print(f"::error::ramdisk 압축 해제 불가: {exc} (1단 gate UNVERIFIED, package 차단)")
+              raise SystemExit(emit("unverified", 1))
+
+            result["format"] = fmt
+            try:
+                entries, count, consumed, trailing = parse_cpio(plain)
+            except Exception as exc:  # noqa: BLE001
+              result["errors"].append(f"cpio parse failed: {exc}")
+              print(f"::error::CPIO 구조 불량: {exc} (1단 gate FAIL)")
+              raise SystemExit(emit("fail", 1))
+
+            result["entries"] = count
+            result["cpio_bytes_consumed"] = consumed
+            result["cpio_trailing_zero_bytes"] = trailing
+            result["checks"]["cpio_structure_ok"] = True
+
+            def find(path):
+              return [path] if path in entries else []
+
+            def is_adb_functionfs_mount(line):
+              return tuple(line.split()[:4]) == ADB_MOUNT_PREFIX
+
+            # 1) device RC 중복 mount 제거 (정확한 파일 하나만 검사)
+            dev_hits = find(DEVICE_RC)
+            device_rc = entries[dev_hits[0]][1] if len(dev_hits) == 1 else b""
+            dev_lines = [line.strip() for line in device_rc.splitlines()
+                   if line.strip() and not line.lstrip().startswith(b"#")]
+            dev_dup = sum(is_adb_functionfs_mount(line) for line in dev_lines)
+            result["checks"]["device_rc_found"] = (len(dev_hits) == 1)
+            result["checks"]["device_rc_duplicate_mounts"] = dev_dup
+            result["checks"]["device_rc_duplicate_removed"] = (
+              len(dev_hits) == 1 and dev_dup == 0
+            )
+
+            # 2) AOSP 기본 mount와 device RC import를 정확한 init.rc에서 검사
+            aosp_file = next((cand for cand in AOSP_INIT_RC if cand in entries), None)
+            aosp_data = entries[aosp_file][1] if aosp_file else b""
+            aosp_lines = [line.strip() for line in aosp_data.splitlines()
+                  if line.strip() and not line.lstrip().startswith(b"#")]
+            aosp_mounts = sum(is_adb_functionfs_mount(line) for line in aosp_lines)
+            device_rc_imported = any(line == DEVICE_RC_IMPORT for line in aosp_lines)
+            result["checks"]["aosp_init_rc_file"] = aosp_file
+            result["checks"]["aosp_mount_total"] = aosp_mounts
+            result["checks"]["aosp_mount_present"] = (aosp_mounts == 1)
+            result["checks"]["device_rc_imported"] = device_rc_imported
+
+            # 3) bootstrap linker: 정확한 symlink target과 mode
+            bl = find("system/bin/bootstrap/linker")
+            expected = os.environ.get("EXPECTED_BOOTSTRAP_LINKER_TARGET", "../linker").strip()
+            if len(bl) == 1:
+              mode, data = entries[bl[0]]
+              ftype = mode & S_IFMT
+              result["checks"]["bootstrap_linker_mode"] = oct(mode & 0o7777)
+              result["checks"]["bootstrap_linker_type"] = (
+                "symlink" if ftype == S_IFLNK else "regular" if ftype == S_IFREG else oct(ftype)
+              )
+              result["checks"]["bootstrap_linker_type_is_symlink"] = (ftype == S_IFLNK)
+              result["checks"]["bootstrap_linker_mode_ok"] = (
+                ftype == S_IFLNK and (mode & 0o777) == 0o777
+              )
+              if ftype == S_IFLNK:
+                tgt = data.split(b"\x00", 1)[0].decode("utf-8", "replace")
+                resolved = posixpath.normpath(posixpath.join(posixpath.dirname(bl[0]), tgt))
+                result["checks"]["bootstrap_linker_target"] = tgt
+                result["checks"]["bootstrap_linker_resolved"] = resolved
+                result["checks"]["bootstrap_linker_target_ok"] = (tgt == expected)
+                result["checks"]["bootstrap_linker_resolves"] = (
+                  resolved == "system/bin/linker" and resolved in entries
+                )
+              else:
+                result["checks"]["bootstrap_linker_target_ok"] = False
+                result["checks"]["bootstrap_linker_resolves"] = False
+            else:
+              result["checks"]["bootstrap_linker_mode"] = None
+              result["checks"]["bootstrap_linker_type"] = None
+              result["checks"]["bootstrap_linker_type_is_symlink"] = False
+              result["checks"]["bootstrap_linker_mode_ok"] = False
+              result["checks"]["bootstrap_linker_target_ok"] = False
+              result["checks"]["bootstrap_linker_resolves"] = False
+
+            # 4) system/bin/linker ELF32 ARM executable
+            lk = find("system/bin/linker")
+            linker_mode = linker_data = None
+            if len(lk) == 1:
+              linker_mode, linker_data = entries[lk[0]]
+            is_elf = linker_data is not None and linker_data[:4] == b"\x7fELF"
+            elf_class = linker_data[4] if is_elf and len(linker_data) > 4 else None
+            elf_machine = (
+              int.from_bytes(linker_data[18:20], "little")
+              if is_elf and len(linker_data) >= 20 else None
+            )
+            result["checks"]["linker_present"] = (len(lk) == 1)
+            result["checks"]["linker_mode"] = oct(linker_mode & 0o7777) if linker_mode is not None else None
+            result["checks"]["linker_exec_bit"] = bool(linker_mode is not None and linker_mode & 0o111)
+            result["checks"]["linker_is_elf"] = is_elf
+            result["checks"]["linker_elf_class"] = {1: "ELF32", 2: "ELF64"}.get(elf_class)
+            result["checks"]["linker_machine"] = elf_machine
+            result["checks"]["linker_abi_ok"] = (
+              linker_mode is not None and (linker_mode & S_IFMT) == S_IFREG
+              and bool(linker_mode & 0o111) and is_elf and elf_class == 1 and elf_machine == 40
+            )
+
+            # 5) 실행 mode
+            for script in ("sbin/usbwait.sh", "sbin/watchdogd.sh"):
+              hits = find(script)
+              mode = (entries[hits[0]][0] & 0o777) if len(hits) == 1 else None
+              result["checks"][script + "_mode"] = oct(mode) if mode is not None else None
+              result["checks"][script + "_exec"] = (mode == 0o755)
+
+            # 6) watchdogd: device RC import와 실제 service 선언 확인
+            watchdog_stanzas = []
+            for line in dev_lines:
+              fields = line.split()
+              if len(fields) >= 3 and tuple(fields[:3]) == WATCHDOG_SERVICE:
+                watchdog_stanzas.append(line.decode("utf-8", "replace"))
+            result["checks"]["watchdogd_rc_files"] = [DEVICE_RC] if watchdog_stanzas else []
+            result["checks"]["watchdogd_stanza_in_device_rc"] = (len(watchdog_stanzas) == 1)
+
+            required = [
+                "cpio_structure_ok",
+              "device_rc_found", "device_rc_imported", "device_rc_duplicate_removed",
+              "aosp_mount_present", "bootstrap_linker_type_is_symlink",
+              "bootstrap_linker_mode_ok", "bootstrap_linker_resolves",
+              "bootstrap_linker_target_ok", "linker_present", "linker_is_elf",
+              "linker_exec_bit", "linker_abi_ok",
+              "sbin/usbwait.sh_exec", "sbin/watchdogd.sh_exec",
+              "watchdogd_stanza_in_device_rc",
+            ]
+            failures = [k for k in required if not result["checks"].get(k)]
+            if failures:
+              result["errors"].append(f"check failures: {failures}")
+              print(f"::error::1단 gate FAILED: {failures}")
+              raise SystemExit(emit("fail", 1))
+            print("1단 gate PASS: final CPIO 에 staging 수정이 실제 반영됨 (정확 경로/타입 기준)")
+            raise SystemExit(emit("pass", 0))
+            PY
+
       - name: Package OrangeFox recovery tar
         id: package
-        if: steps.ramdisk_limit.outcome == 'success'
+        if: steps.ramdisk_limit.outcome == 'success' && steps.ramdisk_gate.outcome == 'success'
         working-directory: ${{ env.WS }}/out/target/product/gtaxladwifikx
         run: |
           set -euo pipefail
